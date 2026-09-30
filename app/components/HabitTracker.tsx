@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { getAllMonths, putMonth, type Habit, type Mark, type MonthRecord } from "@/lib/db";
 import Charts from "./Charts";
 import ShareButton from "./ShareButton";
@@ -26,6 +26,11 @@ const COLUMN_HOVER_CSS = Array.from({ length: 31 }, (_, i) => {
   return `${on} [data-col="${d}"]{background:var(--col-hover)}` +
     `${on} [data-col-num="${d}"]:not([data-today]){background:var(--col-num-hover-bg);color:var(--col-num-hover-fg)}`;
 }).join("");
+
+const DATE_LABEL = new Intl.DateTimeFormat(undefined, { weekday: "short", month: "short", day: "numeric" });
+const NO_MARKS: Record<number, Mark> = {};
+
+type Day = { d: number; weekend: boolean; label: string };
 
 const monthKey = (y: number, m: number) => `${y}-${String(m + 1).padStart(2, "0")}`;
 const daysIn = (y: number, m: number) => new Date(y, m + 1, 0).getDate();
@@ -69,12 +74,45 @@ function doneCount(record: MonthRecord, habitId: string) {
   return Object.values(record.checks[habitId] ?? {}).filter((v) => v === 1).length;
 }
 
+type Loaded = { today: Date; months: Map<string, MonthRecord>; error: string | null };
+
 export default function HabitTracker() {
-  const [today, setToday] = useState<Date | null>(null);
-  const [year, setYear] = useState(0);
-  const [month, setMonth] = useState(0);
-  const [months, setMonths] = useState<Map<string, MonthRecord> | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState<Loaded | null>(null);
+
+  useEffect(() => {
+    getAllMonths()
+      .then(
+        (all) => ({ months: new Map(all.map((r) => [r.key, r])), error: null }),
+        () => ({
+          months: new Map<string, MonthRecord>(),
+          error: "Couldn't open local storage. Your browser may be blocking IndexedDB.",
+        }),
+      )
+      .then((r) => setLoaded({ ...r, today: new Date() }));
+  }, []);
+
+  if (!loaded) {
+    return <div className="grid flex-1 place-items-center text-sm text-zinc-400 dark:text-zinc-500">Loading…</div>;
+  }
+  return <Tracker {...loaded} />;
+}
+
+// Stable across renders, so memoized rows only re-render when their own data changes.
+type RowActions = {
+  toggle: (habitId: string, day: number) => void;
+  rename: (habitId: string, name: string) => void;
+  remove: (habitId: string) => void;
+  dragStart: (e: React.PointerEvent<HTMLElement>, row: number) => void;
+  dragMove: (e: React.PointerEvent) => void;
+  dragEnd: () => void;
+  handleKey: (e: React.KeyboardEvent, row: number) => void;
+};
+
+function Tracker({ today, months: initialMonths, error: initialError }: Loaded) {
+  const [year, setYear] = useState(today.getFullYear());
+  const [month, setMonth] = useState(today.getMonth());
+  const [months, setMonths] = useState(initialMonths);
+  const [error, setError] = useState(initialError);
   const tableRef = useRef<HTMLTableElement>(null);
   const [lastToggled, setLastToggled] = useState<{ key: string; habitId: string; day: number } | null>(null);
   const [saved, setSaved] = useState(false);
@@ -85,26 +123,57 @@ export default function HabitTracker() {
   // Row positions captured just before a reorder commits, so rows can glide from where they were.
   const flipFrom = useRef<Map<string, number> | null>(null);
 
-  useEffect(() => {
-    getAllMonths()
-      .then((all) => new Map(all.map((r) => [r.key, r])))
-      .catch(() => {
-        setError("Couldn't open local storage. Your browser may be blocking IndexedDB.");
-        return new Map<string, MonthRecord>();
-      })
-      .then((loaded) => {
-        const now = new Date();
-        setToday(now);
-        setYear(now.getFullYear());
-        setMonth(now.getMonth());
-        setMonths(loaded);
-      });
-  }, []);
-
   const key = monthKey(year, month);
-  const record = useMemo(
-    () => (months ? months.get(key) ?? blankMonth(key, months) : null),
-    [months, key],
+  const record = useMemo(() => months.get(key) ?? blankMonth(key, months), [months, key]);
+
+  const days = daysIn(year, month);
+  const elapsed = elapsedDays(year, month, today);
+  const isCurrentMonth = year === today.getFullYear() && month === today.getMonth();
+
+  const dayList = useMemo<Day[]>(
+    () =>
+      Array.from({ length: daysIn(year, month) }, (_, i) => {
+        const date = new Date(year, month, i + 1);
+        const weekday = date.getDay();
+        return { d: i + 1, weekend: weekday === 0 || weekday === 6, label: DATE_LABEL.format(date) };
+      }),
+    [year, month],
+  );
+
+  const scores = useMemo(
+    () =>
+      Array.from({ length: days }, (_, i) =>
+        record.habits.reduce((n, h) => n + (record.checks[h.id]?.[i + 1] === 1 ? 1 : 0), 0),
+      ),
+    [record, days],
+  );
+  const habitStats = useMemo(
+    () => record.habits.map((h) => ({ ...h, done: doneCount(record, h.id) })),
+    [record],
+  );
+  const yearly = useMemo(
+    () =>
+      MONTHS.map((label, m) => {
+        const r = months.get(monthKey(year, m));
+        const possibleM = r ? r.habits.length * elapsedDays(year, m, today) : 0;
+        const doneM = r ? r.habits.reduce((n, h) => n + doneCount(r, h.id), 0) : 0;
+        return { label, pct: possibleM ? Math.round((doneM / possibleM) * 100) : null, current: m === month };
+      }),
+    [months, year, month, today],
+  );
+
+  const actionsRef = useRef<RowActions>(null);
+  const rowActions = useMemo<RowActions>(
+    () => ({
+      toggle: (id, d) => actionsRef.current!.toggle(id, d),
+      rename: (id, name) => actionsRef.current!.rename(id, name),
+      remove: (id) => actionsRef.current!.remove(id),
+      dragStart: (e, row) => actionsRef.current!.dragStart(e, row),
+      dragMove: (e) => actionsRef.current!.dragMove(e),
+      dragEnd: () => actionsRef.current!.dragEnd(),
+      handleKey: (e, row) => actionsRef.current!.handleKey(e, row),
+    }),
+    [],
   );
 
   useLayoutEffect(() => {
@@ -122,14 +191,6 @@ export default function HabitTracker() {
       });
     }
   }, [record, drag]);
-
-  if (!today || !months || !record) {
-    return <div className="grid flex-1 place-items-center text-sm text-zinc-400 dark:text-zinc-500">Loading…</div>;
-  }
-
-  const days = daysIn(year, month);
-  const elapsed = elapsedDays(year, month, today);
-  const isCurrentMonth = year === today.getFullYear() && month === today.getMonth();
 
   const save = (next: MonthRecord) => {
     setMonths((prev) => new Map(prev).set(next.key, next));
@@ -254,9 +315,12 @@ export default function HabitTracker() {
     return 0;
   };
 
-  const scores = Array.from({ length: days }, (_, i) =>
-    record.habits.reduce((n, h) => n + (record.checks[h.id]?.[i + 1] === 1 ? 1 : 0), 0),
-  );
+  useLayoutEffect(() => {
+    actionsRef.current = {
+      toggle, rename, remove: removeHabit, dragStart: startDrag, dragMove: moveDrag, dragEnd: endDrag, handleKey: onHandleKey,
+    };
+  });
+
   const possible = record.habits.length * elapsed;
   const totalDone = scores.reduce((a, b) => a + b, 0);
 
@@ -327,10 +391,7 @@ export default function HabitTracker() {
               <th className="sticky left-8 z-20 border-b border-r border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-2 py-3 text-left text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400 w-28 lg:w-36 xl:w-44">
                 Habit
               </th>
-              {Array.from({ length: days }, (_, i) => {
-                const d = i + 1;
-                const weekday = new Date(year, month, d).getDay();
-                const weekend = weekday === 0 || weekday === 6;
+              {dayList.map(({ d, weekend }) => {
                 const isToday = isCurrentMonth && d === today.getDate();
                 return (
                   <th
@@ -362,24 +423,16 @@ export default function HabitTracker() {
                 key={habit.id}
                 row={row}
                 habit={habit}
-                marks={record.checks[habit.id] ?? {}}
+                marks={record.checks[habit.id] ?? NO_MARKS}
                 elapsed={elapsed}
-                days={days}
-                year={year}
-                month={month}
+                dayList={dayList}
                 todayDay={isCurrentMonth ? today.getDate() : 0}
                 animateDay={lastToggled?.key === key && lastToggled.habitId === habit.id ? lastToggled.day : 0}
                 canRemove={record.habits.length > MIN_HABITS}
                 shift={shiftFor(row)}
                 dragging={drag?.id === habit.id}
                 dragActive={drag !== null}
-                onDragStart={(e) => startDrag(e, row)}
-                onDragMove={moveDrag}
-                onDragEnd={endDrag}
-                onHandleKey={(e) => onHandleKey(e, row)}
-                onToggle={(d) => toggle(habit.id, d)}
-                onRename={(name) => rename(habit.id, name)}
-                onRemove={() => removeHabit(habit.id)}
+                actions={rowActions}
               />
             ))}
           </tbody>
@@ -409,50 +462,36 @@ export default function HabitTracker() {
         scores={scores}
         max={record.habits.length}
         elapsed={elapsed}
-        habits={record.habits.map((h) => ({ ...h, done: doneCount(record, h.id) }))}
-        yearly={MONTHS.map((label, m) => {
-          const r = months.get(monthKey(year, m));
-          const possibleM = r ? r.habits.length * elapsedDays(year, m, today) : 0;
-          const doneM = r ? r.habits.reduce((n, h) => n + doneCount(r, h.id), 0) : 0;
-          return { label, pct: possibleM ? Math.round((doneM / possibleM) * 100) : null, current: m === month };
-        })}
+        habits={habitStats}
+        yearly={yearly}
       />
     </div>
   );
 }
 
-function HabitRow({
-  row, habit, marks, elapsed, days, year, month, todayDay, animateDay,
-  canRemove, shift, dragging, dragActive, onDragStart, onDragMove, onDragEnd, onHandleKey,
-  onToggle, onRename, onRemove,
+const HabitRow = memo(function HabitRow({
+  row, habit, marks, elapsed, dayList, todayDay, animateDay,
+  canRemove, shift, dragging, dragActive, actions,
 }: {
   row: number;
   habit: Habit;
   marks: Record<number, Mark>;
   elapsed: number;
-  days: number;
-  year: number;
-  month: number;
+  dayList: Day[];
   todayDay: number;
   animateDay: number;
   canRemove: boolean;
   shift: number;
   dragging: boolean;
   dragActive: boolean;
-  onDragStart: (e: React.PointerEvent<HTMLElement>) => void;
-  onDragMove: (e: React.PointerEvent) => void;
-  onDragEnd: () => void;
-  onHandleKey: (e: React.KeyboardEvent) => void;
-  onToggle: (day: number) => void;
-  onRename: (name: string) => void;
-  onRemove: () => void;
+  actions: RowActions;
 }) {
   const [confirming, setConfirming] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(() => () => clearTimeout(timer.current), []);
 
   const askRemove = () => {
-    if (confirming) return onRemove();
+    if (confirming) return actions.remove(habit.id);
     setConfirming(true);
     timer.current = setTimeout(() => setConfirming(false), 3000);
   };
@@ -475,11 +514,11 @@ function HabitRow({
       <td className="sticky left-0 z-10 border-b border-zinc-100 dark:border-zinc-900 bg-white dark:bg-zinc-950 p-0 group-last/row:border-b-0">
         <button
           type="button"
-          onPointerDown={onDragStart}
-          onPointerMove={onDragMove}
-          onPointerUp={onDragEnd}
-          onPointerCancel={onDragEnd}
-          onKeyDown={onHandleKey}
+          onPointerDown={(e) => actions.dragStart(e, row)}
+          onPointerMove={actions.dragMove}
+          onPointerUp={actions.dragEnd}
+          onPointerCancel={actions.dragEnd}
+          onKeyDown={(e) => actions.handleKey(e, row)}
           aria-label={`Reorder ${label}, position ${index}`}
           aria-keyshortcuts="ArrowUp ArrowDown"
           title="Drag to reorder"
@@ -497,7 +536,7 @@ function HabitRow({
         <div className="relative flex items-center">
           <input
             value={habit.name}
-            onChange={(e) => onRename(e.target.value)}
+            onChange={(e) => actions.rename(habit.id, e.target.value)}
             placeholder={`Habit ${index}`}
             maxLength={40}
             aria-label={`Habit ${index} name`}
@@ -522,16 +561,13 @@ function HabitRow({
           )}
         </div>
       </td>
-      {Array.from({ length: days }, (_, i) => {
-        const d = i + 1;
+      {dayList.map(({ d, label: dateLabel }) => {
         const mark = marks[d];
         const future = d > elapsed;
         const linkLeft = mark === 1 && marks[d - 1] === 1;
         const linkRight = mark === 1 && marks[d + 1] === 1;
         // Only connectors next to the box just toggled fade in, in step with its check.
         const linkFade = animateDay > 0 && Math.abs(d - animateDay) <= 1 ? "link-fade" : "";
-        const date = new Date(year, month, d);
-        const dateLabel = date.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
         const state = mark === 1 ? "Done" : mark === 2 ? "Missed" : future ? "Upcoming" : "Not marked";
         return (
           <td
@@ -547,7 +583,7 @@ function HabitRow({
               type="button"
               disabled={future}
               data-cell={`${row}-${d}`}
-              onClick={() => onToggle(d)}
+              onClick={() => actions.toggle(habit.id, d)}
               title={`${label} · ${dateLabel} · ${state}`}
               aria-label={`${label}, ${dateLabel}: ${state}`}
               className="group/box relative grid h-10 w-full short:h-8 place-items-center outline-none disabled:cursor-default"
@@ -559,7 +595,7 @@ function HabitRow({
       })}
     </tr>
   );
-}
+});
 
 function Box({ mark, today, future, animate }: { mark?: Mark; today?: boolean; future?: boolean; animate?: boolean }) {
   const base =

@@ -1,12 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { memo, useState } from "react";
 import ScoreGraph from "./ScoreGraph";
 
 const TYPES = ["Line", "Bars", "Habits", "Year"] as const;
 type ChartType = (typeof TYPES)[number];
 
-export default function Charts({
+export default memo(function Charts({
   days,
   scores,
   max,
@@ -109,4 +109,4 @@ export default function Charts({
       </div>
     </section>
   );
-}
+});

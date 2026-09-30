@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { encodeShare, monthStats, shareImageUrl, type SharedMonth } from "@/lib/share";
 
-export default function ShareButton({ title, ...month }: SharedMonth & { title: string }) {
+export default memo(function ShareButton({ title, ...month }: SharedMonth & { title: string }) {
   // Rows left unnamed are placeholders, so they stay out of the image, the link and the score.
   const shared: SharedMonth = { ...month, habits: month.habits.filter((h) => h.name.trim()) };
   const { pct } = monthStats(shared);
@@ -44,7 +44,10 @@ export default function ShareButton({ title, ...month }: SharedMonth & { title: 
     }
   };
 
-  const file = image ? new File([image.blob], fileName, { type: "image/png" }) : null;
+  const file = useMemo(
+    () => (image ? new File([image.blob], fileName, { type: "image/png" }) : null),
+    [image, fileName],
+  );
   const canShareFile =
     typeof navigator !== "undefined" && !!file && !!navigator.canShare?.({ files: [file] });
 
@@ -173,4 +176,4 @@ export default function ShareButton({ title, ...month }: SharedMonth & { title: 
       </dialog>
     </>
   );
-}
+});

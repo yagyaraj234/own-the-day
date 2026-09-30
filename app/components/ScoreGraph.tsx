@@ -25,7 +25,10 @@ export default function ScoreGraph({
 
   useLayoutEffect(() => {
     const el = box.current!;
-    const measure = () => setSize({ w: el.clientWidth, h: el.clientHeight });
+    const measure = () => {
+      const w = el.clientWidth, h = el.clientHeight;
+      setSize((s) => (s && s.w === w && s.h === h ? s : { w, h }));
+    };
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(el);
