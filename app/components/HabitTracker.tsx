@@ -487,24 +487,27 @@ function HabitRow({
         </button>
       </td>
       <td className="sticky left-8 z-10 border-b border-r border-zinc-100 border-r-zinc-200 bg-white group-last/row:border-b-0 group/name">
-        <div className="flex items-center">
+        <div className="relative flex items-center">
           <input
             value={habit.name}
             onChange={(e) => onRename(e.target.value)}
             placeholder={`Habit ${index}`}
             maxLength={40}
             aria-label={`Habit ${index} name`}
-            className="w-full min-w-0 rounded-md bg-transparent px-2 py-2 text-sm font-medium text-zinc-900 transition-colors placeholder:font-normal placeholder:text-zinc-300 hover:bg-zinc-50 focus:bg-zinc-50 focus:outline-none"
+            className={`w-full min-w-0 rounded-md bg-transparent px-2 py-2 text-sm font-medium text-zinc-900 transition-colors placeholder:font-normal placeholder:text-zinc-300 hover:bg-zinc-50 focus:bg-zinc-50 focus:outline-none ${
+              // Reserve room for the remove button only while it's visible.
+              !canRemove ? "" : confirming ? "pr-20" : "group-hover/name:pr-8 group-focus-within/name:pr-8"
+            }`}
           />
           {canRemove && (
             <button
               type="button"
               onClick={askRemove}
               aria-label={`Remove ${label}`}
-              className={`mr-1.5 shrink-0 rounded-md px-1.5 py-0.5 text-xs transition-[opacity,color,background-color] duration-150 ${
+              className={`absolute right-1.5 top-1/2 -translate-y-1/2 rounded-md px-1.5 py-0.5 text-xs transition-[opacity,color,background-color] duration-150 ${
                 confirming
                   ? "bg-rose-600 text-white opacity-100"
-                  : "text-zinc-400 opacity-0 hover:text-rose-600 focus-visible:opacity-100 group-hover/name:opacity-100 group-focus-within/name:opacity-100"
+                  : "pointer-events-none text-zinc-400 opacity-0 hover:text-rose-600 focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover/name:pointer-events-auto group-hover/name:opacity-100 group-focus-within/name:pointer-events-auto group-focus-within/name:opacity-100"
               }`}
             >
               {confirming ? "Remove?" : "✕"}
