@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useState } from "react";
+import { memo, useId, useRef, useState } from "react";
 import ScoreGraph from "./ScoreGraph";
 
 const TYPES = ["Line", "Bars", "Habits", "Year"] as const;
@@ -22,6 +22,23 @@ export default memo(function Charts({
   yearly: { label: string; pct: number | null; current: boolean }[];
 }) {
   const [type, setType] = useState<ChartType>("Line");
+  const id = useId();
+  const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
+
+  // Arrow keys, Home and End move between tabs and select as they go (WAI-ARIA tabs pattern).
+  const onTabKey = (e: React.KeyboardEvent) => {
+    const i = TYPES.indexOf(type);
+    const next =
+      e.key === "ArrowRight" ? (i + 1) % TYPES.length
+      : e.key === "ArrowLeft" ? (i - 1 + TYPES.length) % TYPES.length
+      : e.key === "Home" ? 0
+      : e.key === "End" ? TYPES.length - 1
+      : -1;
+    if (next < 0) return;
+    e.preventDefault();
+    setType(TYPES[next]);
+    tabRefs.current[next]?.focus();
+  };
 
   return (
     // Takes the height left under the grid, within limits, so the page fills the screen unscaled.
@@ -30,15 +47,19 @@ export default memo(function Charts({
         <h2 className="text-sm text-zinc-500 dark:text-zinc-400">
           {type === "Habits" ? "Per habit" : type === "Year" ? "This year" : "Daily score"}
         </h2>
-        <div role="tablist" className="flex rounded-lg bg-zinc-100 dark:bg-zinc-900 p-0.5 text-sm">
-          {TYPES.map((t) => (
+        <div role="tablist" aria-label="Chart type" onKeyDown={onTabKey} className="flex rounded-lg bg-zinc-100 dark:bg-zinc-900 p-0.5 text-sm">
+          {TYPES.map((t, i) => (
             <button
               key={t}
+              ref={(el) => { tabRefs.current[i] = el; }}
               type="button"
               role="tab"
+              id={`${id}-tab-${t}`}
               aria-selected={type === t}
+              aria-controls={`${id}-panel`}
+              tabIndex={type === t ? 0 : -1}
               onClick={() => setType(t)}
-              className={`rounded-md px-2.5 py-1 transition-colors ${
+              className={`rounded-md px-2.5 py-1 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-zinc-900 dark:focus-visible:ring-zinc-100 ${
                 type === t ? "bg-white dark:bg-zinc-700 font-medium text-zinc-900 dark:text-zinc-100 shadow-sm" : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
               }`}
             >
@@ -48,7 +69,13 @@ export default memo(function Charts({
         </div>
       </div>
 
-      <div className="flex min-h-56 flex-1 flex-col rounded-xl border border-zinc-200 dark:border-zinc-800 short:min-h-48">
+      <div
+        role="tabpanel"
+        id={`${id}-panel`}
+        aria-labelledby={`${id}-tab-${type}`}
+        tabIndex={0}
+        className="flex min-h-56 flex-1 flex-col rounded-xl border border-zinc-200 dark:border-zinc-800 short:min-h-48 outline-none focus-visible:ring-2 focus-visible:ring-zinc-900 dark:focus-visible:ring-zinc-100"
+      >
         {(type === "Line" || type === "Bars") && (
           <div className="relative my-4 flex-1">
             {/* Left gutter matches the grid's number + habit columns (w-8 + w-28 / lg:w-36 / xl:w-44). */}
