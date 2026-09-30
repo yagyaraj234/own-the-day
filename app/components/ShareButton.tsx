@@ -94,7 +94,7 @@ export default function ShareButton({ title, ...month }: SharedMonth & { title: 
   ];
 
   const btn =
-    "rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-sm font-medium text-zinc-900 shadow-xs transition-[background-color,transform] duration-150 hover:bg-zinc-50 active:scale-[0.97] motion-reduce:active:scale-100";
+    "rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-1.5 text-sm font-medium text-zinc-900 dark:text-zinc-100 shadow-xs transition-[background-color,transform] duration-150 hover:bg-zinc-50 dark:hover:bg-zinc-800 active:scale-[0.97] motion-reduce:active:scale-100";
 
   return (
     <>
@@ -103,14 +103,14 @@ export default function ShareButton({ title, ...month }: SharedMonth & { title: 
         onClick={open}
         disabled={!shared.habits.length}
         title={shared.habits.length ? undefined : "Name a habit to share your month"}
-        className={`${btn} disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-white`}
+        className={`${btn} disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-white dark:disabled:hover:bg-zinc-900`}
       >
         Share
       </button>
       <dialog
         ref={dialogRef}
         onClick={(e) => e.target === e.currentTarget && dialogRef.current?.close()}
-        className="m-auto w-[min(640px,calc(100vw-2rem))] rounded-2xl border border-zinc-200 bg-white p-0 text-zinc-900 shadow-xl backdrop:bg-zinc-900/30"
+        className="m-auto w-[min(640px,calc(100vw-2rem))] rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-0 text-zinc-900 dark:text-zinc-100 shadow-xl backdrop:bg-zinc-900/30 dark:backdrop:bg-black/60"
       >
         <div className="p-5">
           <div className="mb-4 flex items-center justify-between">
@@ -119,7 +119,7 @@ export default function ShareButton({ title, ...month }: SharedMonth & { title: 
               type="button"
               onClick={() => dialogRef.current?.close()}
               aria-label="Close"
-              className="rounded-md px-2 py-0.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-900"
+              className="rounded-md px-2 py-0.5 text-zinc-400 dark:text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-900 dark:hover:text-zinc-100"
             >
               ✕
             </button>
@@ -127,9 +127,9 @@ export default function ShareButton({ title, ...month }: SharedMonth & { title: 
 
           {image ? (
             // eslint-disable-next-line @next/next/no-img-element -- local blob URL, nothing to optimize
-            <img src={image.url} alt={`Habit grid for ${title}`} className="aspect-[1200/630] w-full rounded-lg border border-zinc-200" />
+            <img src={image.url} alt={`Habit grid for ${title}`} className="aspect-[1200/630] w-full rounded-lg border border-zinc-200 dark:border-zinc-800" />
           ) : (
-            <div className="grid aspect-[1200/630] w-full place-items-center rounded-lg border border-zinc-200 bg-zinc-50 text-sm text-zinc-400">
+            <div className="grid aspect-[1200/630] w-full place-items-center rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800 text-sm text-zinc-400 dark:text-zinc-500">
               Making your image…
             </div>
           )}
@@ -139,7 +139,7 @@ export default function ShareButton({ title, ...month }: SharedMonth & { title: 
               <button
                 type="button"
                 onClick={nativeShare}
-                className="rounded-lg bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white transition-[background-color,transform] duration-150 hover:bg-zinc-800 active:scale-[0.97] motion-reduce:active:scale-100"
+                className="rounded-lg bg-zinc-900 dark:bg-zinc-100 px-3 py-1.5 text-sm font-medium text-white dark:text-zinc-900 transition-[background-color,transform] duration-150 hover:bg-zinc-800 dark:hover:bg-zinc-200 active:scale-[0.97] motion-reduce:active:scale-100"
               >
                 Share image…
               </button>
@@ -149,7 +149,7 @@ export default function ShareButton({ title, ...month }: SharedMonth & { title: 
             <button type="button" onClick={copyLink} className={btn}>Copy link</button>
           </div>
 
-          <div className="mt-4 border-t border-zinc-100 pt-4">
+          <div className="mt-4 border-t border-zinc-100 dark:border-zinc-800 pt-4">
             <div className="flex flex-wrap gap-2">
               {socials.map((s) => (
                 <a
@@ -165,7 +165,7 @@ export default function ShareButton({ title, ...month }: SharedMonth & { title: 
                 </a>
               ))}
             </div>
-            <p className="mt-2 text-xs text-zinc-500" aria-live="polite">
+            <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400" aria-live="polite">
               {status ?? "Your link shows this card as its preview once the app is on a public address."}
             </p>
           </div>

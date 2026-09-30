@@ -27,10 +27,10 @@ export default function Charts({
     // Takes the height left under the grid, within limits, so the page fills the screen unscaled.
     <section className="mt-6 flex max-h-111 flex-1 flex-col short:mt-4">
       <div className="mb-3 flex items-center justify-between gap-4">
-        <h2 className="text-sm text-zinc-500">
+        <h2 className="text-sm text-zinc-500 dark:text-zinc-400">
           {type === "Habits" ? "Per habit" : type === "Year" ? "This year" : "Daily score"}
         </h2>
-        <div role="tablist" className="flex rounded-lg bg-zinc-100 p-0.5 text-sm">
+        <div role="tablist" className="flex rounded-lg bg-zinc-100 dark:bg-zinc-900 p-0.5 text-sm">
           {TYPES.map((t) => (
             <button
               key={t}
@@ -39,7 +39,7 @@ export default function Charts({
               aria-selected={type === t}
               onClick={() => setType(t)}
               className={`rounded-md px-2.5 py-1 transition-colors ${
-                type === t ? "bg-white font-medium text-zinc-900 shadow-sm" : "text-zinc-500 hover:text-zinc-900"
+                type === t ? "bg-white dark:bg-zinc-700 font-medium text-zinc-900 dark:text-zinc-100 shadow-sm" : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
               }`}
             >
               {t}
@@ -48,7 +48,7 @@ export default function Charts({
         </div>
       </div>
 
-      <div className="flex min-h-56 flex-1 flex-col rounded-xl border border-zinc-200 short:min-h-48">
+      <div className="flex min-h-56 flex-1 flex-col rounded-xl border border-zinc-200 dark:border-zinc-800 short:min-h-48">
         {(type === "Line" || type === "Bars") && (
           <div className="relative my-4 flex-1">
             {/* Left gutter matches the grid's number + habit columns (w-8 + w-28 / lg:w-36 / xl:w-44). */}
@@ -61,7 +61,7 @@ export default function Charts({
                 variant={type === "Line" ? "line" : "bar"}
               />
               {elapsed === 0 && (
-                <p className="absolute inset-0 grid place-items-center text-sm text-zinc-400">
+                <p className="absolute inset-0 grid place-items-center text-sm text-zinc-400 dark:text-zinc-500">
                   This month hasn&apos;t started yet.
                 </p>
               )}
@@ -79,11 +79,11 @@ export default function Charts({
               const pct = elapsed ? Math.round((h.done / elapsed) * 100) : 0;
               return (
                 <li key={h.id} className="grid grid-cols-[8rem_1fr_3rem] items-center gap-3 text-sm xl:grid-cols-[10rem_1fr_3rem]">
-                  <span className="truncate text-zinc-700">{h.name.trim() || `Habit ${i + 1}`}</span>
-                  <span className="h-2 overflow-hidden rounded-full bg-zinc-100">
-                    <span className="block h-full rounded-full bg-zinc-900" style={{ width: `${pct}%` }} />
+                  <span className="truncate text-zinc-700 dark:text-zinc-300">{h.name.trim() || `Habit ${i + 1}`}</span>
+                  <span className="h-2 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
+                    <span className="block h-full rounded-full bg-zinc-900 dark:bg-zinc-100" style={{ width: `${pct}%` }} />
                   </span>
-                  <span className="text-right tabular-nums text-zinc-500">{pct}%</span>
+                  <span className="text-right tabular-nums text-zinc-500 dark:text-zinc-400">{pct}%</span>
                 </li>
               );
             })}
@@ -94,14 +94,14 @@ export default function Charts({
           <div className="flex flex-1 gap-2 p-5 short:p-4">
             {yearly.map((m) => (
               <div key={m.label} className="flex flex-1 flex-col items-center justify-end gap-2">
-                <span className="text-xs tabular-nums text-zinc-500">{m.pct === null ? "" : `${m.pct}%`}</span>
+                <span className="text-xs tabular-nums text-zinc-500 dark:text-zinc-400">{m.pct === null ? "" : `${m.pct}%`}</span>
                 <div className="relative w-full flex-1">
                   <div
-                    className={`absolute inset-x-0 bottom-0 rounded-t ${m.current ? "bg-zinc-900" : "bg-zinc-300"}`}
+                    className={`absolute inset-x-0 bottom-0 rounded-t ${m.current ? "bg-zinc-900 dark:bg-zinc-100" : "bg-zinc-300 dark:bg-zinc-700"}`}
                     style={{ height: `${m.pct ?? 0}%` }}
                   />
                 </div>
-                <span className={`text-xs ${m.current ? "font-medium text-zinc-900" : "text-zinc-400"}`}>{m.label}</span>
+                <span className={`text-xs ${m.current ? "font-medium text-zinc-900 dark:text-zinc-100" : "text-zinc-400 dark:text-zinc-500"}`}>{m.label}</span>
               </div>
             ))}
           </div>
