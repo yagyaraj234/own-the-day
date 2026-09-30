@@ -306,7 +306,6 @@ export default function HabitTracker() {
             days={days}
             elapsed={elapsed}
             todayDay={isCurrentMonth ? today.getDate() : 0}
-            pct={pct}
           />
         </div>
       </header>

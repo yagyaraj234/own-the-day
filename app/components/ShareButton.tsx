@@ -1,9 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { encodeShare, shareImageUrl, type SharedMonth } from "@/lib/share";
+import { encodeShare, monthStats, shareImageUrl, type SharedMonth } from "@/lib/share";
 
-export default function ShareButton(props: SharedMonth & { title: string; pct: number | null }) {
+export default function ShareButton({ title, ...month }: SharedMonth & { title: string }) {
+  // Rows left unnamed are placeholders, so they stay out of the image, the link and the score.
+  const shared: SharedMonth = { ...month, habits: month.habits.filter((h) => h.name.trim()) };
+  const { pct } = monthStats(shared);
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [image, setImage] = useState<{ blob: Blob; url: string } | null>(null);
   const [link, setLink] = useState("");
@@ -12,10 +15,10 @@ export default function ShareButton(props: SharedMonth & { title: string; pct: n
   useEffect(() => () => clearTimeout(statusTimer.current), []);
   useEffect(() => () => { if (image) URL.revokeObjectURL(image.url); }, [image]);
 
-  const text = props.pct === null
-    ? `Starting my ${props.title} habit tracker on Own The Day.`
-    : `${props.pct}% of my habits done in ${props.title}. Tracking every day with Own The Day.`;
-  const fileName = `owntheday-${props.year}-${String(props.month + 1).padStart(2, "0")}.png`;
+  const text = pct === null
+    ? `Starting my ${title} habit tracker on Own The Day.`
+    : `${pct}% of my habits done in ${title}. Tracking every day with Own The Day.`;
+  const fileName = `owntheday-${month.year}-${String(month.month + 1).padStart(2, "0")}.png`;
 
   const flash = (msg: string) => {
     setStatus(msg);
@@ -26,7 +29,7 @@ export default function ShareButton(props: SharedMonth & { title: string; pct: n
   const open = async () => {
     // The link carries a read-only copy of this month, so it opens the same grid for anyone.
     // Its page advertises the same card as the preview image social sites show under the post.
-    const data = encodeShare(props);
+    const data = encodeShare(shared);
     setLink(`${window.location.origin}/share?d=${data}`);
     setImage(null);
     setStatus(null);
@@ -95,7 +98,13 @@ export default function ShareButton(props: SharedMonth & { title: string; pct: n
 
   return (
     <>
-      <button type="button" onClick={open} className={btn}>
+      <button
+        type="button"
+        onClick={open}
+        disabled={!shared.habits.length}
+        title={shared.habits.length ? undefined : "Name a habit to share your month"}
+        className={`${btn} disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-white`}
+      >
         Share
       </button>
       <dialog
@@ -118,7 +127,7 @@ export default function ShareButton(props: SharedMonth & { title: string; pct: n
 
           {image ? (
             // eslint-disable-next-line @next/next/no-img-element -- local blob URL, nothing to optimize
-            <img src={image.url} alt={`Habit grid for ${props.title}`} className="aspect-[1200/630] w-full rounded-lg border border-zinc-200" />
+            <img src={image.url} alt={`Habit grid for ${title}`} className="aspect-[1200/630] w-full rounded-lg border border-zinc-200" />
           ) : (
             <div className="grid aspect-[1200/630] w-full place-items-center rounded-lg border border-zinc-200 bg-zinc-50 text-sm text-zinc-400">
               Making your image…
