@@ -11,6 +11,7 @@ export default memo(function ShareButton({ title, ...month }: SharedMonth & { ti
   const [image, setImage] = useState<{ blob: Blob; url: string } | null>(null);
   const [link, setLink] = useState("");
   const [status, setStatus] = useState<string | null>(null);
+  const request = useRef(0);
   const statusTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(() => () => clearTimeout(statusTimer.current), []);
   useEffect(() => () => { if (image) URL.revokeObjectURL(image.url); }, [image]);
@@ -34,13 +35,15 @@ export default memo(function ShareButton({ title, ...month }: SharedMonth & { ti
     setImage(null);
     setStatus(null);
     dialogRef.current?.showModal();
+    // A slower image from an earlier opening mustn't replace this one.
+    const id = ++request.current;
     try {
       const res = await fetch(shareImageUrl(data, 2));
       if (!res.ok) throw new Error(String(res.status));
       const blob = await res.blob();
-      setImage({ blob, url: URL.createObjectURL(blob) });
+      if (id === request.current) setImage({ blob, url: URL.createObjectURL(blob) });
     } catch {
-      setStatus("Couldn't make the image. The link still works.");
+      if (id === request.current) setStatus("Couldn't make the image. The link still works.");
     }
   };
 

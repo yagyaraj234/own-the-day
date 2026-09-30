@@ -232,6 +232,11 @@ function Tracker({ today, months: initialMonths, error: initialError }: Loaded) 
     highlightDay(nd);
   };
 
+  // Keyboard focus sets the column highlight too, so drop it once focus leaves the grid.
+  const onGridBlur = (e: React.FocusEvent) => {
+    if (!e.currentTarget.contains(e.relatedTarget)) highlightDay(null);
+  };
+
   const highlightDay = (d: number | null) => {
     const table = tableRef.current;
     if (!table) return;
@@ -417,7 +422,7 @@ function Tracker({ today, months: initialMonths, error: initialError }: Loaded) 
               })}
             </tr>
           </thead>
-          <tbody ref={tbodyRef} onKeyDown={onGridKey}>
+          <tbody ref={tbodyRef} onKeyDown={onGridKey} onBlur={onGridBlur}>
             {record.habits.map((habit, row) => (
               <HabitRow
                 key={habit.id}
