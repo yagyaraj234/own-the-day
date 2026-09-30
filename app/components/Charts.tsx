@@ -24,7 +24,7 @@ export default function Charts({
   const [type, setType] = useState<ChartType>("Line");
 
   return (
-    <section className="mt-12">
+    <section className="mt-8">
       <div className="mb-3 flex items-center justify-between gap-4">
         <h2 className="text-sm text-zinc-500">
           {type === "Habits" ? "Per habit" : type === "Year" ? "This year" : "Daily score"}
@@ -47,9 +47,10 @@ export default function Charts({
         </div>
       </div>
 
-      <div className="rounded-xl border border-zinc-200 p-3 sm:p-5">
+      <div className="rounded-xl border border-zinc-200">
         {(type === "Line" || type === "Bars") && (
-          <>
+          // Left gutter matches the grid's number + habit columns (w-8 + w-36, lg:w-44).
+          <div className="relative py-5 pl-44 lg:pl-52">
             <ScoreGraph
               days={days}
               scores={scores}
@@ -58,13 +59,15 @@ export default function Charts({
               variant={type === "Line" ? "line" : "bar"}
             />
             {elapsed === 0 && (
-              <p className="pb-2 text-center text-sm text-zinc-400">This month hasn&apos;t started yet.</p>
+              <p className="absolute inset-y-0 left-44 right-0 grid place-items-center text-sm text-zinc-400 lg:left-52">
+                This month hasn&apos;t started yet.
+              </p>
             )}
-          </>
+          </div>
         )}
 
         {type === "Habits" && (
-          <ul className="flex flex-col gap-3">
+          <ul className="flex flex-col gap-3 p-5">
             {habits.map((h, i) => {
               const pct = elapsed ? Math.round((h.done / elapsed) * 100) : 0;
               return (
@@ -81,7 +84,7 @@ export default function Charts({
         )}
 
         {type === "Year" && (
-          <div className="flex h-56 items-end gap-2">
+          <div className="flex h-66 items-end gap-2 p-5">
             {yearly.map((m) => (
               <div key={m.label} className="flex h-full flex-1 flex-col items-center justify-end gap-2">
                 <span className="text-xs tabular-nums text-zinc-500">{m.pct === null ? "" : `${m.pct}%`}</span>

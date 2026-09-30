@@ -53,12 +53,16 @@ function blankMonth(key: string, months: Map<string, MonthRecord>): MonthRecord 
 
 // A row being dragged by its handle. `mids` are the vertical centers of every row when the drag
 // began; comparing the dragged row's center against them picks the drop slot.
-type Drag = { id: string; from: number; to: number; dy: number; startY: number; mids: number[]; h: number };
+// Positions are in the table's own pixels: the page may be scaled to fit the viewport, so screen
+// measurements are divided by `scale`.
+type Drag = { id: string; from: number; to: number; dy: number; startY: number; mids: number[]; h: number; scale: number };
 
 const rowEls = (tbody: HTMLElement | null) =>
   Array.from(tbody?.querySelectorAll<HTMLElement>("[data-row-id]") ?? []);
 const rowTops = (tbody: HTMLElement | null) =>
   new Map(rowEls(tbody).map((el) => [el.dataset.rowId!, el.getBoundingClientRect().top]));
+// How much the page is scaled on screen, read off a row's rendered vs. layout height.
+const scaleOf = (el: HTMLElement) => el.getBoundingClientRect().height / el.offsetHeight || 1;
 
 function doneCount(record: MonthRecord, habitId: string) {
   return Object.values(record.checks[habitId] ?? {}).filter((v) => v === 1).length;
@@ -109,7 +113,7 @@ export default function HabitTracker() {
     for (const el of rowEls(tbodyRef.current)) {
       const prev = from.get(el.dataset.rowId!);
       if (prev === undefined) continue;
-      const dy = prev - el.getBoundingClientRect().top;
+      const dy = (prev - el.getBoundingClientRect().top) / scaleOf(el);
       if (Math.abs(dy) < 1) continue;
       el.animate([{ transform: `translateY(${dy}px)` }, { transform: "none" }], {
         duration: 200,
@@ -204,10 +208,12 @@ export default function HabitTracker() {
   const startDrag = (e: React.PointerEvent<HTMLElement>, row: number) => {
     if (e.button !== 0) return;
     e.currentTarget.setPointerCapture(e.pointerId);
-    const rects = rowEls(tbodyRef.current).map((el) => el.getBoundingClientRect());
+    const els = rowEls(tbodyRef.current);
+    const scale = scaleOf(els[row]);
+    const rects = els.map((el) => el.getBoundingClientRect());
     setDrag({
-      id: record.habits[row].id, from: row, to: row, dy: 0, startY: e.clientY,
-      mids: rects.map((r) => r.top + r.height / 2), h: rects[row].height,
+      id: record.habits[row].id, from: row, to: row, dy: 0, startY: e.clientY, scale,
+      mids: rects.map((r) => (r.top + r.height / 2) / scale), h: rects[row].height / scale,
     });
   };
 
@@ -215,7 +221,7 @@ export default function HabitTracker() {
     if (!drag) return;
     const { from, mids } = drag;
     // Keep the row inside the table.
-    const dy = Math.min(Math.max(e.clientY - drag.startY, mids[0] - mids[from]), mids[mids.length - 1] - mids[from]);
+    const dy = Math.min(Math.max((e.clientY - drag.startY) / drag.scale, mids[0] - mids[from]), mids[mids.length - 1] - mids[from]);
     const center = mids[from] + dy;
     let to = from;
     while (to < mids.length - 1 && center > mids[to + 1]) to++;
@@ -263,7 +269,7 @@ export default function HabitTracker() {
   };
 
   return (
-    <div className="mx-auto w-full max-w-[1320px] px-4 py-8 sm:px-8 sm:py-12">
+    <div className="w-full px-8 py-8">
       <header className="mb-6 flex items-center justify-between gap-4">
         <div className="flex items-center gap-1">
           <button type="button" onClick={() => shiftMonth(-1)} aria-label="Previous month" className="rounded-md px-2 py-1 text-xl text-zinc-400 transition-[color,background-color,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:bg-zinc-100 hover:text-zinc-900 active:scale-[0.97] motion-reduce:active:scale-100">‹</button>
@@ -312,8 +318,8 @@ export default function HabitTracker() {
       )}
 
       <style>{COLUMN_HOVER_CSS}</style>
-      <section className={`overflow-x-auto rounded-xl border border-zinc-200${drag ? " cursor-grabbing select-none" : ""}`} onMouseOver={onGridHover} onMouseLeave={() => highlightDay(null)}>
-        <table ref={tableRef} className="w-full min-w-[760px] table-fixed border-collapse text-zinc-900">
+      <section className={`overflow-hidden rounded-xl border border-zinc-200${drag ? " cursor-grabbing select-none" : ""}`} onMouseOver={onGridHover} onMouseLeave={() => highlightDay(null)}>
+        <table ref={tableRef} className="w-full table-fixed border-collapse text-zinc-900">
           <thead>
             <tr>
               <th className="sticky left-0 z-20 w-8 border-b border-zinc-200 bg-white" />

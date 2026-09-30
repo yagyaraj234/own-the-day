@@ -1,6 +1,8 @@
+// The plot spans exactly the width of the grid's day columns, so each day lines up with its
+// column above. Y-axis labels hang off the left edge into the gutter (overflow visible).
 const W = 960;
 const H = 260;
-const PAD = { l: 28, r: 8, t: 10, b: 28 };
+const PAD = { l: 0, r: 0, t: 10, b: 28 };
 const PLOT_W = W - PAD.l - PAD.r;
 const PLOT_H = H - PAD.t - PAD.b;
 
@@ -25,10 +27,9 @@ export default function ScoreGraph({
   const line = points.map(([px, py], i) => `${i ? "L" : "M"}${px},${py}`).join(" ");
 
   return (
-    <div className="overflow-x-auto">
-      <svg
+    <svg
         viewBox={`0 0 ${W} ${H}`}
-        className="block w-full min-w-[640px]"
+        className="block w-full overflow-visible"
         role="img"
         aria-label="Daily habits score graph"
       >
@@ -69,7 +70,6 @@ export default function ScoreGraph({
             <title>{`Day ${i + 1}: ${scores[i]}/${max}`}</title>
           </circle>
         ))}
-      </svg>
-    </div>
+    </svg>
   );
 }
