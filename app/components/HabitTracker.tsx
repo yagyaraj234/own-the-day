@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { getAllMonths, putMonth, type Habit, type Mark, type MonthRecord } from "@/lib/db";
 import Charts from "./Charts";
+import ShareButton from "./ShareButton";
 
 const MIN_HABITS = 3;
 const MAX_HABITS = 12;
@@ -50,6 +51,15 @@ function blankMonth(key: string, months: Map<string, MonthRecord>): MonthRecord 
   return { key, habits: prev ? prev.habits.map((h) => ({ ...h })) : DEFAULT_HABITS, checks: {} };
 }
 
+// A row being dragged by its handle. `mids` are the vertical centers of every row when the drag
+// began; comparing the dragged row's center against them picks the drop slot.
+type Drag = { id: string; from: number; to: number; dy: number; startY: number; mids: number[]; h: number };
+
+const rowEls = (tbody: HTMLElement | null) =>
+  Array.from(tbody?.querySelectorAll<HTMLElement>("[data-row-id]") ?? []);
+const rowTops = (tbody: HTMLElement | null) =>
+  new Map(rowEls(tbody).map((el) => [el.dataset.rowId!, el.getBoundingClientRect().top]));
+
 function doneCount(record: MonthRecord, habitId: string) {
   return Object.values(record.checks[habitId] ?? {}).filter((v) => v === 1).length;
 }
@@ -65,6 +75,10 @@ export default function HabitTracker() {
   const [saved, setSaved] = useState(false);
   const savedTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(() => () => clearTimeout(savedTimer.current), []);
+  const tbodyRef = useRef<HTMLTableSectionElement>(null);
+  const [drag, setDrag] = useState<Drag | null>(null);
+  // Row positions captured just before a reorder commits, so rows can glide from where they were.
+  const flipFrom = useRef<Map<string, number> | null>(null);
 
   useEffect(() => {
     getAllMonths()
@@ -87,6 +101,22 @@ export default function HabitTracker() {
     () => (months ? months.get(key) ?? blankMonth(key, months) : null),
     [months, key],
   );
+
+  useLayoutEffect(() => {
+    const from = flipFrom.current;
+    flipFrom.current = null;
+    if (!from || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    for (const el of rowEls(tbodyRef.current)) {
+      const prev = from.get(el.dataset.rowId!);
+      if (prev === undefined) continue;
+      const dy = prev - el.getBoundingClientRect().top;
+      if (Math.abs(dy) < 1) continue;
+      el.animate([{ transform: `translateY(${dy}px)` }, { transform: "none" }], {
+        duration: 200,
+        easing: "cubic-bezier(0.23, 1, 0.32, 1)",
+      });
+    }
+  }, [record, drag]);
 
   if (!today || !months || !record) {
     return <div className="py-32 text-center text-sm text-zinc-400">Loading…</div>;
@@ -163,6 +193,60 @@ export default function HabitTracker() {
     save({ ...record, habits: record.habits.filter((h) => h.id !== habitId), checks });
   };
 
+  const moveHabit = (from: number, to: number) => {
+    if (to < 0 || to >= record.habits.length || from === to) return;
+    const habits = [...record.habits];
+    const [moved] = habits.splice(from, 1);
+    habits.splice(to, 0, moved);
+    save({ ...record, habits });
+  };
+
+  const startDrag = (e: React.PointerEvent<HTMLElement>, row: number) => {
+    if (e.button !== 0) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    const rects = rowEls(tbodyRef.current).map((el) => el.getBoundingClientRect());
+    setDrag({
+      id: record.habits[row].id, from: row, to: row, dy: 0, startY: e.clientY,
+      mids: rects.map((r) => r.top + r.height / 2), h: rects[row].height,
+    });
+  };
+
+  const moveDrag = (e: React.PointerEvent) => {
+    if (!drag) return;
+    const { from, mids } = drag;
+    // Keep the row inside the table.
+    const dy = Math.min(Math.max(e.clientY - drag.startY, mids[0] - mids[from]), mids[mids.length - 1] - mids[from]);
+    const center = mids[from] + dy;
+    let to = from;
+    while (to < mids.length - 1 && center > mids[to + 1]) to++;
+    while (to > 0 && center < mids[to - 1]) to--;
+    setDrag({ ...drag, dy, to });
+  };
+
+  const endDrag = () => {
+    if (!drag) return;
+    flipFrom.current = rowTops(tbodyRef.current);
+    setDrag(null);
+    moveHabit(drag.from, drag.to);
+  };
+
+  const onHandleKey = (e: React.KeyboardEvent, row: number) => {
+    const delta = e.key === "ArrowUp" ? -1 : e.key === "ArrowDown" ? 1 : 0;
+    if (!delta) return;
+    e.preventDefault();
+    flipFrom.current = rowTops(tbodyRef.current);
+    moveHabit(row, row + delta);
+  };
+
+  // While dragging, rows between the old and new slot step aside by one row height.
+  const shiftFor = (row: number) => {
+    if (!drag) return 0;
+    if (row === drag.from) return drag.dy;
+    if (drag.from < row && row <= drag.to) return -drag.h;
+    if (drag.to <= row && row < drag.from) return drag.h;
+    return 0;
+  };
+
   const scores = Array.from({ length: days }, (_, i) =>
     record.habits.reduce((n, h) => n + (record.checks[h.id]?.[i + 1] === 1 ? 1 : 0), 0),
   );
@@ -207,6 +291,17 @@ export default function HabitTracker() {
             <span className="size-1.5 rounded-full bg-emerald-500" /> Saved
           </span>
           {pct !== null && <span>{pct}% done</span>}
+          <ShareButton
+            title={`${MONTH_NAMES[month]} ${year}`}
+            habits={record.habits}
+            checks={record.checks}
+            year={year}
+            month={month}
+            days={days}
+            elapsed={elapsed}
+            todayDay={isCurrentMonth ? today.getDate() : 0}
+            pct={pct}
+          />
         </div>
       </header>
 
@@ -217,7 +312,7 @@ export default function HabitTracker() {
       )}
 
       <style>{COLUMN_HOVER_CSS}</style>
-      <section className="overflow-x-auto rounded-xl border border-zinc-200" onMouseOver={onGridHover} onMouseLeave={() => highlightDay(null)}>
+      <section className={`overflow-x-auto rounded-xl border border-zinc-200${drag ? " cursor-grabbing select-none" : ""}`} onMouseOver={onGridHover} onMouseLeave={() => highlightDay(null)}>
         <table ref={tableRef} className="w-full min-w-[760px] table-fixed border-collapse text-zinc-900">
           <thead>
             <tr>
@@ -254,7 +349,7 @@ export default function HabitTracker() {
               })}
             </tr>
           </thead>
-          <tbody onKeyDown={onGridKey}>
+          <tbody ref={tbodyRef} onKeyDown={onGridKey}>
             {record.habits.map((habit, row) => (
               <HabitRow
                 key={habit.id}
@@ -268,6 +363,13 @@ export default function HabitTracker() {
                 todayDay={isCurrentMonth ? today.getDate() : 0}
                 animateDay={lastToggled?.key === key && lastToggled.habitId === habit.id ? lastToggled.day : 0}
                 canRemove={record.habits.length > MIN_HABITS}
+                shift={shiftFor(row)}
+                dragging={drag?.id === habit.id}
+                dragActive={drag !== null}
+                onDragStart={(e) => startDrag(e, row)}
+                onDragMove={moveDrag}
+                onDragEnd={endDrag}
+                onHandleKey={(e) => onHandleKey(e, row)}
                 onToggle={(d) => toggle(habit.id, d)}
                 onRename={(name) => rename(habit.id, name)}
                 onRemove={() => removeHabit(habit.id)}
@@ -282,7 +384,7 @@ export default function HabitTracker() {
           <span className="flex items-center gap-1.5"><Box mark={1} /> Done</span>
           <span className="flex items-center gap-1.5"><Box mark={2} /> Missed</span>
           <span className="hidden items-center gap-1 text-zinc-400 md:flex">
-            <Kbd>←</Kbd><Kbd>→</Kbd><Kbd>↑</Kbd><Kbd>↓</Kbd> move · <Kbd>Space</Kbd> mark
+            <Kbd>←</Kbd><Kbd>→</Kbd><Kbd>↑</Kbd><Kbd>↓</Kbd> move · <Kbd>Space</Kbd> mark · drag <span className="font-medium">⋮⋮</span> to reorder
           </span>
         </p>
         <button
@@ -314,7 +416,8 @@ export default function HabitTracker() {
 
 function HabitRow({
   row, habit, marks, elapsed, days, year, month, todayDay, animateDay,
-  canRemove, onToggle, onRename, onRemove,
+  canRemove, shift, dragging, dragActive, onDragStart, onDragMove, onDragEnd, onHandleKey,
+  onToggle, onRename, onRemove,
 }: {
   row: number;
   habit: Habit;
@@ -326,6 +429,13 @@ function HabitRow({
   todayDay: number;
   animateDay: number;
   canRemove: boolean;
+  shift: number;
+  dragging: boolean;
+  dragActive: boolean;
+  onDragStart: (e: React.PointerEvent<HTMLElement>) => void;
+  onDragMove: (e: React.PointerEvent) => void;
+  onDragEnd: () => void;
+  onHandleKey: (e: React.KeyboardEvent) => void;
   onToggle: (day: number) => void;
   onRename: (name: string) => void;
   onRemove: () => void;
@@ -344,9 +454,37 @@ function HabitRow({
   const label = habit.name.trim() || `Habit ${index}`;
 
   return (
-    <tr className="group/row">
-      <td className="sticky left-0 z-10 border-b border-zinc-100 bg-white text-center text-xs tabular-nums text-zinc-400 group-last/row:border-b-0">
-        {index}
+    <tr
+      data-row-id={habit.id}
+      style={shift ? { transform: `translateY(${shift}px)` } : undefined}
+      className={`group/row ${
+        dragging
+          ? "relative z-20 bg-white shadow-[0_8px_24px_-6px_rgb(0_0_0/0.18),0_0_0_1px_rgb(0_0_0/0.06)]"
+          : dragActive
+            ? "transition-transform duration-200 ease-[cubic-bezier(0.23,1,0.32,1)] motion-reduce:transition-none"
+            : ""
+      }`}
+    >
+      <td className="sticky left-0 z-10 border-b border-zinc-100 bg-white p-0 group-last/row:border-b-0">
+        <button
+          type="button"
+          onPointerDown={onDragStart}
+          onPointerMove={onDragMove}
+          onPointerUp={onDragEnd}
+          onPointerCancel={onDragEnd}
+          onKeyDown={onHandleKey}
+          aria-label={`Reorder ${label}, position ${index}`}
+          aria-keyshortcuts="ArrowUp ArrowDown"
+          title="Drag to reorder"
+          className={`group/handle grid h-10 w-full touch-none place-items-center text-xs tabular-nums text-zinc-400 outline-none hover:text-zinc-600 focus-visible:text-zinc-900 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-zinc-900 ${
+            dragging ? "cursor-grabbing text-zinc-600" : "cursor-grab"
+          }`}
+        >
+          <span className={dragging ? "hidden" : "group-hover/row:hidden group-focus-visible/handle:hidden"}>{index}</span>
+          <svg viewBox="0 0 10 16" aria-hidden className={`h-3.5 w-2.5 ${dragging ? "block" : "hidden group-hover/row:block group-focus-visible/handle:block"}`}>
+            {[3, 8, 13].flatMap((y) => [2.5, 7.5].map((x) => <circle key={`${x}-${y}`} cx={x} cy={y} r="1.3" fill="currentColor" />))}
+          </svg>
+        </button>
       </td>
       <td className="sticky left-8 z-10 border-b border-r border-zinc-100 border-r-zinc-200 bg-white group-last/row:border-b-0 group/name">
         <div className="flex items-center">
