@@ -24,7 +24,8 @@ export default function Charts({
   const [type, setType] = useState<ChartType>("Line");
 
   return (
-    <section className="mt-8">
+    // Takes the height left under the grid, within limits, so the page fills the screen unscaled.
+    <section className="mt-6 flex max-h-111 flex-1 flex-col short:mt-4">
       <div className="mb-3 flex items-center justify-between gap-4">
         <h2 className="text-sm text-zinc-500">
           {type === "Habits" ? "Per habit" : type === "Year" ? "This year" : "Daily score"}
@@ -47,31 +48,37 @@ export default function Charts({
         </div>
       </div>
 
-      <div className="rounded-xl border border-zinc-200">
+      <div className="flex min-h-56 flex-1 flex-col rounded-xl border border-zinc-200 short:min-h-48">
         {(type === "Line" || type === "Bars") && (
-          // Left gutter matches the grid's number + habit columns (w-8 + w-36, lg:w-44).
-          <div className="relative py-5 pl-44 lg:pl-52">
-            <ScoreGraph
-              days={days}
-              scores={scores}
-              max={max}
-              elapsed={elapsed}
-              variant={type === "Line" ? "line" : "bar"}
-            />
-            {elapsed === 0 && (
-              <p className="absolute inset-y-0 left-44 right-0 grid place-items-center text-sm text-zinc-400 lg:left-52">
-                This month hasn&apos;t started yet.
-              </p>
-            )}
+          <div className="relative my-4 flex-1">
+            {/* Left gutter matches the grid's number + habit columns (w-8 + w-28 / lg:w-36 / xl:w-44). */}
+            <div className="absolute inset-y-0 left-36 right-0 lg:left-44 xl:left-52">
+              <ScoreGraph
+                days={days}
+                scores={scores}
+                max={max}
+                elapsed={elapsed}
+                variant={type === "Line" ? "line" : "bar"}
+              />
+              {elapsed === 0 && (
+                <p className="absolute inset-0 grid place-items-center text-sm text-zinc-400">
+                  This month hasn&apos;t started yet.
+                </p>
+              )}
+            </div>
           </div>
         )}
 
         {type === "Habits" && (
-          <ul className="flex flex-col gap-3 p-5">
+          // Two columns past six habits, so the list fits the chart's height without scrolling.
+          <ul
+            style={habits.length > 6 ? { gridTemplateRows: `repeat(${Math.ceil(habits.length / 2)}, auto)` } : undefined}
+            className={`grid flex-1 content-center gap-x-10 gap-y-3 p-5 short:gap-y-2 short:p-4 ${habits.length > 6 ? "grid-flow-col grid-cols-2" : ""}`}
+          >
             {habits.map((h, i) => {
               const pct = elapsed ? Math.round((h.done / elapsed) * 100) : 0;
               return (
-                <li key={h.id} className="grid grid-cols-[8rem_1fr_3rem] items-center gap-3 text-sm sm:grid-cols-[12rem_1fr_3rem]">
+                <li key={h.id} className="grid grid-cols-[8rem_1fr_3rem] items-center gap-3 text-sm xl:grid-cols-[10rem_1fr_3rem]">
                   <span className="truncate text-zinc-700">{h.name.trim() || `Habit ${i + 1}`}</span>
                   <span className="h-2 overflow-hidden rounded-full bg-zinc-100">
                     <span className="block h-full rounded-full bg-zinc-900" style={{ width: `${pct}%` }} />
@@ -84,13 +91,13 @@ export default function Charts({
         )}
 
         {type === "Year" && (
-          <div className="flex h-66 items-end gap-2 p-5">
+          <div className="flex flex-1 gap-2 p-5 short:p-4">
             {yearly.map((m) => (
-              <div key={m.label} className="flex h-full flex-1 flex-col items-center justify-end gap-2">
+              <div key={m.label} className="flex flex-1 flex-col items-center justify-end gap-2">
                 <span className="text-xs tabular-nums text-zinc-500">{m.pct === null ? "" : `${m.pct}%`}</span>
-                <div className="flex w-full flex-1 items-end">
+                <div className="relative w-full flex-1">
                   <div
-                    className={`w-full rounded-t ${m.current ? "bg-zinc-900" : "bg-zinc-300"}`}
+                    className={`absolute inset-x-0 bottom-0 rounded-t ${m.current ? "bg-zinc-900" : "bg-zinc-300"}`}
                     style={{ height: `${m.pct ?? 0}%` }}
                   />
                 </div>

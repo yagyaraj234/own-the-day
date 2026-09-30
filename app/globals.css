@@ -5,6 +5,9 @@
   --font-mono: var(--font-geist-mono);
 }
 
+/* Short viewports (landscape laptops, tablets) tighten vertical rhythm so more fits unscaled. */
+@custom-variant short (@media (max-height: 900px));
+
 body {
   background: #ffffff;
   color: #18181b;

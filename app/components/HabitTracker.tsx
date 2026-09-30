@@ -123,7 +123,7 @@ export default function HabitTracker() {
   }, [record, drag]);
 
   if (!today || !months || !record) {
-    return <div className="py-32 text-center text-sm text-zinc-400">Loading…</div>;
+    return <div className="grid flex-1 place-items-center text-sm text-zinc-400">Loading…</div>;
   }
 
   const days = daysIn(year, month);
@@ -269,8 +269,8 @@ export default function HabitTracker() {
   };
 
   return (
-    <div className="w-full px-8 py-8">
-      <header className="mb-6 flex items-center justify-between gap-4">
+    <div className="flex w-full flex-1 flex-col justify-center px-5 py-8 short:py-5 lg:px-8">
+      <header className="mb-6 flex shrink-0 short:mb-4 items-center justify-between gap-4">
         <div className="flex items-center gap-1">
           <button type="button" onClick={() => shiftMonth(-1)} aria-label="Previous month" className="rounded-md px-2 py-1 text-xl text-zinc-400 transition-[color,background-color,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:bg-zinc-100 hover:text-zinc-900 active:scale-[0.97] motion-reduce:active:scale-100">‹</button>
           <h1 className="min-w-44 text-center text-2xl font-semibold tracking-tight text-zinc-900">
@@ -322,7 +322,7 @@ export default function HabitTracker() {
           <thead>
             <tr>
               <th className="sticky left-0 z-20 w-8 border-b border-zinc-200 bg-white" />
-              <th className="sticky left-8 z-20 w-36 border-b border-r border-zinc-200 bg-white px-2 py-3 text-left text-xs font-medium uppercase tracking-wide text-zinc-500 lg:w-44">
+              <th className="sticky left-8 z-20 border-b border-r border-zinc-200 bg-white px-2 py-3 text-left text-xs font-medium uppercase tracking-wide text-zinc-500 w-28 lg:w-36 xl:w-44">
                 Habit
               </th>
               {Array.from({ length: days }, (_, i) => {
@@ -339,7 +339,7 @@ export default function HabitTracker() {
                     <span
                       data-col-num={d}
                       data-today={isToday || undefined}
-                      className={`mx-auto grid size-6 place-items-center rounded-full text-xs tabular-nums ${
+                      className={`mx-auto grid size-5 place-items-center rounded-full text-[11px] tabular-nums lg:size-6 lg:text-xs ${
                         isToday
                           ? "bg-zinc-900 font-semibold text-white"
                           : weekend
@@ -384,7 +384,7 @@ export default function HabitTracker() {
         </table>
       </section>
 
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-xs text-zinc-500">
+      <div className="mt-3 flex shrink-0 flex-wrap items-center justify-between gap-3 text-xs text-zinc-500">
         <p className="flex items-center gap-4">
           <span className="flex items-center gap-1.5"><Box mark={1} /> Done</span>
           <span className="flex items-center gap-1.5"><Box mark={2} /> Missed</span>
@@ -481,7 +481,7 @@ function HabitRow({
           aria-label={`Reorder ${label}, position ${index}`}
           aria-keyshortcuts="ArrowUp ArrowDown"
           title="Drag to reorder"
-          className={`group/handle grid h-10 w-full touch-none place-items-center text-xs tabular-nums text-zinc-400 outline-none hover:text-zinc-600 focus-visible:text-zinc-900 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-zinc-900 ${
+          className={`group/handle grid h-10 w-full short:h-8 touch-none place-items-center text-xs tabular-nums text-zinc-400 outline-none hover:text-zinc-600 focus-visible:text-zinc-900 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-zinc-900 ${
             dragging ? "cursor-grabbing text-zinc-600" : "cursor-grab"
           }`}
         >
@@ -548,7 +548,7 @@ function HabitRow({
               onClick={() => onToggle(d)}
               title={`${label} · ${dateLabel} · ${state}`}
               aria-label={`${label}, ${dateLabel}: ${state}`}
-              className="group/box relative grid h-10 w-full place-items-center outline-none disabled:cursor-default"
+              className="group/box relative grid h-10 w-full short:h-8 place-items-center outline-none disabled:cursor-default"
             >
               <Box mark={mark} today={d === todayDay} future={future} animate={d === animateDay} />
             </button>
@@ -561,12 +561,12 @@ function HabitRow({
 
 function Box({ mark, today, future, animate }: { mark?: Mark; today?: boolean; future?: boolean; animate?: boolean }) {
   const base =
-    "relative grid size-[22px] place-items-center rounded-[6px] border transition-[transform,background-color,border-color] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] group-active/box:scale-[0.95] motion-reduce:group-active/box:scale-100 group-focus-visible/box:ring-2 group-focus-visible/box:ring-zinc-900 group-focus-visible/box:ring-offset-2";
+    "relative grid size-[18px] place-items-center rounded-[5px] border lg:size-[22px] lg:rounded-[6px] transition-[transform,background-color,border-color] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] group-active/box:scale-[0.95] motion-reduce:group-active/box:scale-100 group-focus-visible/box:ring-2 group-focus-visible/box:ring-zinc-900 group-focus-visible/box:ring-offset-2";
 
   if (mark === 1) {
     return (
       <span className={`${base} border-emerald-600 bg-emerald-500 text-white shadow-[inset_0_1px_0_rgb(255_255_255/0.25),0_1px_2px_rgb(16_185_129/0.35)]`}>
-        <svg key="done" viewBox="0 0 16 16" className="size-3.5" aria-hidden>
+        <svg key="done" viewBox="0 0 16 16" className="size-3 lg:size-3.5" aria-hidden>
           <path
             d="M3.5 8.5 L6.5 11.5 L12.5 4.5"
             pathLength={1}
@@ -584,7 +584,7 @@ function Box({ mark, today, future, animate }: { mark?: Mark; today?: boolean; f
   if (mark === 2) {
     return (
       <span className={`${base} border-rose-200 bg-rose-50 text-rose-500`}>
-        <svg key="missed" viewBox="0 0 16 16" className={`size-3${animate ? " check-fade" : ""}`} aria-hidden>
+        <svg key="missed" viewBox="0 0 16 16" className={`size-2.5 lg:size-3${animate ? " check-fade" : ""}`} aria-hidden>
           <path
             d="M4.5 4.5 L11.5 11.5 M11.5 4.5 L4.5 11.5"
             fill="none"
@@ -606,7 +606,7 @@ function Box({ mark, today, future, animate }: { mark?: Mark; today?: boolean; f
       }`}
     >
       {/* faint preview of the check on hover */}
-      <svg key="empty" viewBox="0 0 16 16" className="size-3.5 text-zinc-300 opacity-0 transition-opacity duration-150 group-hover/box:opacity-100" aria-hidden>
+      <svg key="empty" viewBox="0 0 16 16" className="size-3 text-zinc-300 opacity-0 lg:size-3.5 transition-opacity duration-150 group-hover/box:opacity-100" aria-hidden>
         <path d="M3.5 8.5 L6.5 11.5 L12.5 4.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
     </span>
