@@ -22,6 +22,7 @@ export const metadata: Metadata = {
   // The image itself comes from app/opengraph-image.tsx.
   openGraph: { title: "Own The Day", description, siteName: "Own The Day", type: "website" },
   twitter: { card: "summary_large_image", title: "Own The Day", description },
+  appleWebApp: { capable: true, title: "Own The Day", statusBarStyle: "default" },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
