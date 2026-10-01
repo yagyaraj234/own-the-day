@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- The MARK pattern from lib/brand.ts. -->
+  <style>
+    .on { fill: #09090b } .off { fill: #d4d4d8 }
+    @media (prefers-color-scheme: dark) { .on { fill: #fafafa } .off { fill: #52525b } }
+  </style>
+  <rect class="on" x="1" y="1" width="8" height="8" rx="1.5"/>
+  <rect class="on" x="12" y="1" width="8" height="8" rx="1.5"/>
+  <rect class="off" x="23" y="1" width="8" height="8" rx="1.5"/>
+  <rect class="on" x="1" y="12" width="8" height="8" rx="1.5"/>
+  <rect class="on" x="12" y="12" width="8" height="8" rx="1.5"/>
+  <rect class="on" x="23" y="12" width="8" height="8" rx="1.5"/>
+  <rect class="off" x="1" y="23" width="8" height="8" rx="1.5"/>
+  <rect class="on" x="12" y="23" width="8" height="8" rx="1.5"/>
+  <rect class="on" x="23" y="23" width="8" height="8" rx="1.5"/>
+</svg>
