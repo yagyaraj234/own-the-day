@@ -1,7 +1,7 @@
 "use client";
 
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { getAllMonths, putMonth, putMonths, requestPersistence, type Habit, type Mark, type MonthRecord } from "@/lib/db";
+import { getAllMonths, getMonth, onMonthsChanged, putMonths, requestPersistence, updateMonth, type Habit, type Mark, type MonthRecord } from "@/lib/db";
 import BackupButton from "./BackupButton";
 import Charts from "./Charts";
 import ShareButton from "./ShareButton";
@@ -213,17 +213,58 @@ function Tracker({ today, months: initialMonths, error: initialError }: Loaded) 
     }
   }, [record, drag]);
 
-  const save = (next: MonthRecord) => {
-    setMonths((prev) => new Map(prev).set(next.key, next));
+  // Writes still in flight per month. While any are, the screen is ahead of the database, so a
+  // change from another window is noted in `stale` and re-read once the last write lands.
+  const pending = useRef(new Map<string, number>());
+  const stale = useRef(new Set<string>());
+
+  const refresh = (k: string) => {
+    getMonth(k)
+      .then((r) => {
+        if (r && !pending.current.get(k)) setMonths((prev) => new Map(prev).set(k, r));
+      })
+      .catch(() => {});
+  };
+
+  useEffect(
+    () =>
+      onMonthsChanged((keys) => {
+        for (const k of keys) {
+          if (pending.current.get(k)) stale.current.add(k);
+          else refresh(k);
+        }
+      }),
+    [],
+  );
+
+  // `change` runs twice: on the screen's copy right away, and on the stored month inside the
+  // write, so another window's edits to the same month survive. It must not have side effects.
+  const save = (change: (r: MonthRecord) => MonthRecord) => {
+    const k = key;
+    const fallback = record;
+    setMonths((prev) => new Map(prev).set(k, change(prev.get(k) ?? fallback)));
+    pending.current.set(k, (pending.current.get(k) ?? 0) + 1);
     requestPersistence();
-    putMonth(next)
-      .then(() => {
+    const settle = () => {
+      const left = pending.current.get(k)! - 1;
+      if (left) pending.current.set(k, left);
+      else pending.current.delete(k);
+      return left;
+    };
+    updateMonth(k, fallback, change)
+      .then((stored) => {
         // Keep the indicator up while saves keep coming; hide it once they stop.
         setSaved(true);
         clearTimeout(savedTimer.current);
         savedTimer.current = setTimeout(() => setSaved(false), 1200);
+        if (settle()) return;
+        if (stale.current.delete(k)) refresh(k);
+        else setMonths((prev) => new Map(prev).set(k, stored));
       })
-      .catch(() => setError("Last change couldn't be saved."));
+      .catch(() => {
+        if (!settle()) refresh(k);
+        setError("Last change couldn't be saved.");
+      });
   };
 
   const restore = async (records: MonthRecord[]) => {
@@ -237,28 +278,32 @@ function Tracker({ today, months: initialMonths, error: initialError }: Loaded) 
   };
 
   const toggle = (habitId: string, day: number) => {
-    const row = { ...(record.checks[habitId] ?? {}) };
-    const cur = row[day];
-    const next: Mark | undefined = cur === undefined ? 1 : cur === 1 ? 2 : undefined;
-    if (next === undefined) delete row[day];
-    else row[day] = next;
     setLastToggled({ key, habitId, day });
-    save({ ...record, checks: { ...record.checks, [habitId]: row } });
+    save((r) => {
+      const row = { ...(r.checks[habitId] ?? {}) };
+      const cur = row[day];
+      const next: Mark | undefined = cur === undefined ? 1 : cur === 1 ? 2 : undefined;
+      if (next === undefined) delete row[day];
+      else row[day] = next;
+      return { ...r, checks: { ...r.checks, [habitId]: row } };
+    });
   };
 
   // Clicking a date cycles the whole column like a single box: done -> missed -> empty.
   const toggleDay = (day: number) => {
     if (!record.habits.length || day > elapsed) return;
-    const next = nextColumnMark(record, day);
-    const checks = { ...record.checks };
-    for (const h of record.habits) {
-      const row = { ...(checks[h.id] ?? {}) };
-      if (next === undefined) delete row[day];
-      else row[day] = next;
-      checks[h.id] = row;
-    }
     setLastToggled({ key, habitId: null, day });
-    save({ ...record, checks });
+    save((r) => {
+      const next = nextColumnMark(r, day);
+      const checks = { ...r.checks };
+      for (const h of r.habits) {
+        const row = { ...(checks[h.id] ?? {}) };
+        if (next === undefined) delete row[day];
+        else row[day] = next;
+        checks[h.id] = row;
+      }
+      return { ...r, checks };
+    });
   };
 
   // Arrow keys move focus around the grid of day boxes.
@@ -297,26 +342,36 @@ function Tracker({ today, months: initialMonths, error: initialError }: Loaded) 
   };
 
   const rename = (habitId: string, name: string) =>
-    save({ ...record, habits: record.habits.map((h) => (h.id === habitId ? { ...h, name } : h)) });
+    save((r) => ({ ...r, habits: r.habits.map((h) => (h.id === habitId ? { ...h, name } : h)) }));
 
   const addHabit = () => {
     if (record.habits.length >= MAX_HABITS) return;
-    save({ ...record, habits: [...record.habits, { id: newId(), name: "" }] });
+    const id = newId();
+    save((r) => (r.habits.length >= MAX_HABITS ? r : { ...r, habits: [...r.habits, { id, name: "" }] }));
   };
 
   const removeHabit = (habitId: string) => {
     if (record.habits.length <= MIN_HABITS) return;
-    const checks = { ...record.checks };
-    delete checks[habitId];
-    save({ ...record, habits: record.habits.filter((h) => h.id !== habitId), checks });
+    save((r) => {
+      if (r.habits.length <= MIN_HABITS) return r;
+      const checks = { ...r.checks };
+      delete checks[habitId];
+      return { ...r, habits: r.habits.filter((h) => h.id !== habitId), checks };
+    });
   };
 
+  // Moves by id, since another window may have added or removed rows in the meantime.
   const moveHabit = (from: number, to: number) => {
     if (to < 0 || to >= record.habits.length || from === to) return;
-    const habits = [...record.habits];
-    const [moved] = habits.splice(from, 1);
-    habits.splice(to, 0, moved);
-    save({ ...record, habits });
+    const id = record.habits[from].id;
+    save((r) => {
+      const at = r.habits.findIndex((h) => h.id === id);
+      if (at < 0) return r;
+      const habits = [...r.habits];
+      const [moved] = habits.splice(at, 1);
+      habits.splice(Math.min(to, habits.length), 0, moved);
+      return { ...r, habits };
+    });
   };
 
   const startDrag = (e: React.PointerEvent<HTMLElement>, row: number) => {
