@@ -1,7 +1,8 @@
 "use client";
 
 import { memo, useCallback, useId, useRef, useState } from "react";
-import ScoreGraph, { habitColor, type Series } from "./ScoreGraph";
+import { habitColor, type Series } from "@/lib/stack";
+import ScoreGraph from "./ScoreGraph";
 
 const TYPES = ["Line", "Area", "Bars", "Year"] as const;
 type ChartType = (typeof TYPES)[number];

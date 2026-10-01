@@ -1,4 +1,5 @@
 import { dailyScores, monthStats, MONTH_NAMES, type SharedMonth } from "@/lib/share";
+import { habitHex, stack, type Series } from "@/lib/stack";
 
 // Rendered by next/og (Satori), so layout is flexbox only and every size is explicit.
 // `k` scales the whole card: 1 for link previews, 2 for the downloadable image.
@@ -25,6 +26,11 @@ export default function ShareCard({ shared, host, k = 1 }: { shared: SharedMonth
   const { habits, checks, year, month, days, elapsed, todayDay } = shared;
   const { pct, done, possible } = monthStats(shared);
   const scores = dailyScores(shared);
+  const series: Series[] = habits.map((h) => ({
+    id: h.id,
+    name: h.name,
+    done: Array.from({ length: days }, (_, i) => (checks[h.id]?.[i + 1] === 1 ? 1 : 0)),
+  }));
 
   // Grid and chart share the space between header and footer; fewer habits leave a taller chart.
   const body = CARD_H - PAD * 2 - HEADER_H - FOOTER_H - GAP * 3;
@@ -100,7 +106,11 @@ export default function ShareCard({ shared, host, k = 1 }: { shared: SharedMonth
                   overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis",
                 }}
               >
-                {habit.name.trim() || `Habit ${r + 1}`}
+                {/* Keys each habit to its band in the area chart, which can't name the thin ones. */}
+                <div style={{ width: u(8), height: u(8), borderRadius: u(2), background: habitHex(r), marginRight: u(8), flexShrink: 0 }} />
+                <div style={{ display: "flex", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>
+                  {habit.name.trim() || `Habit ${r + 1}`}
+                </div>
               </div>
               {Array.from({ length: days }, (_, i) => {
                 const d = i + 1;
@@ -127,9 +137,9 @@ export default function ShareCard({ shared, host, k = 1 }: { shared: SharedMonth
         })}
       </div>
 
-      {/* Daily score, the app's line graph with its columns aligned to the grid's days */}
+      {/* Daily score, the app's stacked area with its columns aligned to the grid's days */}
       <div style={{ ...panel, flexDirection: "row", marginTop: u(GAP), height: u(chartH + 2) }}>
-        <ScoreLine scores={scores} elapsed={elapsed} max={habits.length} cell={cell} height={chartH} k={k} />
+        <ScoreArea scores={scores} series={series} elapsed={elapsed} max={habits.length} cell={cell} height={chartH} k={k} />
       </div>
 
       {/* Footer */}
@@ -181,8 +191,8 @@ function ScoreStats({ scores, max, height, k }: { scores: number[]; max: number;
   );
 }
 
-function ScoreLine({ scores, elapsed, max, cell, height, k }: {
-  scores: number[]; elapsed: number; max: number; cell: number; height: number; k: number;
+function ScoreArea({ scores, series, elapsed, max, cell, height, k }: {
+  scores: number[]; series: Series[]; elapsed: number; max: number; cell: number; height: number; k: number;
 }) {
   const u = (n: number) => n * k;
   const top = 14;
@@ -190,9 +200,10 @@ function ScoreLine({ scores, elapsed, max, cell, height, k }: {
   const w = cell * scores.length;
   const ymax = Math.max(max, 1);
   const y = (v: number) => top + plot - (v / ymax) * plot;
-  const x = (i: number) => cell * (i + 0.5);
-  const points = scores.slice(0, elapsed).map((v, i) => [x(i), y(v)] as const);
-  const line = points.map(([px, py], i) => `${i ? "L" : "M"}${px},${py}`).join(" ");
+  const x = (day: number) => cell * (day - 0.5);
+  const { layers, labels } = elapsed > 0
+    ? stack(series, elapsed, cell, x, y, plot / ymax)
+    : { layers: [], labels: [] };
   // Label every score like the app does, thinning out only when rows would crowd.
   const step = plot / ymax < 14 ? 2 : 1;
   const ticks = Array.from({ length: ymax + 1 }, (_, v) => v);
@@ -212,9 +223,23 @@ function ScoreLine({ scores, elapsed, max, cell, height, k }: {
           {ticks.map((v) => (
             <line key={v} x1={0} x2={w} y1={y(v)} y2={y(v)} stroke={C.zinc100} strokeWidth={1} />
           ))}
-          {line && <path d={line} fill="none" stroke={C.zinc900} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" />}
-          {points.map(([px, py], i) => <circle key={i} cx={px} cy={py} r={2.6} fill={C.zinc900} />)}
+          {layers.map(({ s, d, color }) => (
+            <path key={s.id} d={d} fill={habitHex(color)} stroke="#ffffff" strokeWidth={0.75} strokeLinejoin="round" />
+          ))}
         </svg>
+        {/* Satori draws no SVG text, so band names are positioned over the plot instead. */}
+        {labels.map((l) => (
+          <div
+            key={l.id}
+            style={{
+              position: "absolute", left: u(l.x - 150), top: u(l.y - 6), width: u(300), height: u(12),
+              display: "flex", alignItems: "center", justifyContent: "center", fontSize: u(10.5), fontWeight: 600,
+              letterSpacing: u(0.4), color: "#ffffff", lineHeight: 1, whiteSpace: "nowrap",
+            }}
+          >
+            {l.text}
+          </div>
+        ))}
         {scores.map((_, i) => (
           <div
             key={i}
