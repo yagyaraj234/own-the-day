@@ -70,6 +70,15 @@ const rowTops = (tbody: HTMLElement | null) =>
 // How much the page is scaled on screen, read off a row's rendered vs. layout height.
 const scaleOf = (el: HTMLElement) => el.getBoundingClientRect().height / el.offsetHeight || 1;
 
+// A column moves together through the same cycle as one box, starting from done unless
+// every habit already shares a mark.
+function nextColumnMark(record: MonthRecord, day: number): Mark | undefined {
+  const marks = record.habits.map((h) => record.checks[h.id]?.[day]);
+  if (marks.every((m) => m === 1)) return 2;
+  if (marks.every((m) => m === 2)) return undefined;
+  return 1;
+}
+
 function doneCount(record: MonthRecord, habitId: string) {
   return Object.values(record.checks[habitId] ?? {}).filter((v) => v === 1).length;
 }
@@ -114,7 +123,7 @@ function Tracker({ today, months: initialMonths, error: initialError }: Loaded) 
   const [months, setMonths] = useState(initialMonths);
   const [error, setError] = useState(initialError);
   const tableRef = useRef<HTMLTableElement>(null);
-  const [lastToggled, setLastToggled] = useState<{ key: string; habitId: string; day: number } | null>(null);
+  const [lastToggled, setLastToggled] = useState<{ key: string; habitId: string | null; day: number } | null>(null);
   const [saved, setSaved] = useState(false);
   const savedTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(() => () => clearTimeout(savedTimer.current), []);
@@ -223,6 +232,21 @@ function Tracker({ today, months: initialMonths, error: initialError }: Loaded) 
     else row[day] = next;
     setLastToggled({ key, habitId, day });
     save({ ...record, checks: { ...record.checks, [habitId]: row } });
+  };
+
+  // Clicking a date cycles the whole column like a single box: done -> missed -> empty.
+  const toggleDay = (day: number) => {
+    if (!record.habits.length || day > elapsed) return;
+    const next = nextColumnMark(record, day);
+    const checks = { ...record.checks };
+    for (const h of record.habits) {
+      const row = { ...(checks[h.id] ?? {}) };
+      if (next === undefined) delete row[day];
+      else row[day] = next;
+      checks[h.id] = row;
+    }
+    setLastToggled({ key, habitId: null, day });
+    save({ ...record, checks });
   };
 
   // Arrow keys move focus around the grid of day boxes.
@@ -407,18 +431,25 @@ function Tracker({ today, months: initialMonths, error: initialError }: Loaded) 
               <th className="sticky left-8 z-20 border-b border-r border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-2 py-3 text-left text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400 w-28 lg:w-36 xl:w-44">
                 Habit
               </th>
-              {dayList.map(({ d, weekend }) => {
+              {dayList.map(({ d, weekend, label }) => {
                 const isToday = isCurrentMonth && d === today.getDate();
+                const next = nextColumnMark(record, d);
+                const action = next === 1 ? "mark all habits done" : next === 2 ? "mark all habits missed" : "clear all habits";
                 return (
                   <th
                     key={d}
                     data-col={d}
                     className="border-b border-zinc-200 dark:border-zinc-800 px-0 py-2 text-center font-normal"
                   >
-                    <span
+                    <button
+                      type="button"
+                      disabled={d > elapsed || !record.habits.length}
+                      onClick={() => toggleDay(d)}
+                      aria-label={`${label}: ${action}`}
+                      title={`${action[0].toUpperCase()}${action.slice(1)} for this day`}
                       data-col-num={d}
                       data-today={isToday || undefined}
-                      className={`mx-auto grid size-5 place-items-center rounded-full text-[11px] tabular-nums lg:size-6 lg:text-xs ${
+                      className={`mx-auto grid size-5 cursor-pointer disabled:cursor-default place-items-center rounded-full text-[11px] tabular-nums lg:size-6 lg:text-xs ${
                         isToday
                           ? "bg-zinc-900 dark:bg-zinc-100 font-semibold text-white dark:text-zinc-900"
                           : weekend
@@ -427,7 +458,7 @@ function Tracker({ today, months: initialMonths, error: initialError }: Loaded) 
                       }`}
                     >
                       {d}
-                    </span>
+                    </button>
                   </th>
                 );
               })}
@@ -443,7 +474,7 @@ function Tracker({ today, months: initialMonths, error: initialError }: Loaded) 
                 elapsed={elapsed}
                 dayList={dayList}
                 todayDay={isCurrentMonth ? today.getDate() : 0}
-                animateDay={lastToggled?.key === key && lastToggled.habitId === habit.id ? lastToggled.day : 0}
+                animateDay={lastToggled?.key === key && (lastToggled.habitId ?? habit.id) === habit.id ? lastToggled.day : 0}
                 canRemove={record.habits.length > MIN_HABITS}
                 shift={shiftFor(row)}
                 dragging={drag?.id === habit.id}
