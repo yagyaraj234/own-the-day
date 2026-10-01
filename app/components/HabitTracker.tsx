@@ -424,6 +424,7 @@ function Tracker({ today, months: initialMonths, error: initialError }: Loaded) 
             elapsed={elapsed}
             todayDay={isCurrentMonth ? today.getDate() : 0}
           />
+          <BackupButton months={months} onRestore={restore} />
           <ThemeToggle />
         </div>
       </header>
@@ -502,8 +503,14 @@ function Tracker({ today, months: initialMonths, error: initialError }: Loaded) 
         <p className="flex items-center gap-4">
           <span className="flex items-center gap-1.5"><Box mark={1} /> Done</span>
           <span className="flex items-center gap-1.5"><Box mark={2} /> Missed</span>
-          <span className="hidden items-center gap-1 text-zinc-400 dark:text-zinc-500 md:flex">
-            <Kbd>←</Kbd><Kbd>→</Kbd><Kbd>↑</Kbd><Kbd>↓</Kbd> move · <Kbd>Space</Kbd> mark · drag <span className="font-medium">⋮⋮</span> to reorder
+          <span className="hidden items-center gap-3 text-zinc-400 dark:text-zinc-500 md:flex">
+            <span className="flex items-center gap-1"><Kbd>←</Kbd><Kbd>→</Kbd><Kbd>↑</Kbd><Kbd>↓</Kbd> move</span>
+            <span aria-hidden>·</span>
+            <span className="flex items-center gap-1"><Kbd>Space</Kbd> mark</span>
+            <span aria-hidden>·</span>
+            <span>click a date to mark the whole day</span>
+            <span aria-hidden>·</span>
+            <span className="flex items-center gap-1">drag <span className="font-medium">⋮⋮</span> to reorder</span>
           </span>
         </p>
         <button
