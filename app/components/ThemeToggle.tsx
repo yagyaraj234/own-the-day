@@ -22,7 +22,14 @@ export default function ThemeToggle() {
   const toggle = () => {
     const current = saved() ?? (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
     const next = current === "dark" ? "light" : "dark";
+    // Color transitions on boxes and buttons would otherwise fade a beat behind the instant page
+    // background swap. Kill them for the switch, flush styles, then let them back in.
+    const freeze = document.createElement("style");
+    freeze.textContent = "*,*::before,*::after{transition:none!important}";
+    document.head.appendChild(freeze);
     document.documentElement.dataset.theme = next;
+    void getComputedStyle(document.body).backgroundColor;
+    requestAnimationFrame(() => freeze.remove());
     try {
       localStorage.setItem(THEME_KEY, next);
     } catch {}
