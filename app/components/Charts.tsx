@@ -1,28 +1,40 @@
 "use client";
 
-import { memo, useId, useRef, useState } from "react";
-import ScoreGraph from "./ScoreGraph";
+import { memo, useCallback, useId, useRef, useState } from "react";
+import ScoreGraph, { habitColor, type Series } from "./ScoreGraph";
 
-const TYPES = ["Line", "Bars", "Habits", "Year"] as const;
+const TYPES = ["Line", "Area", "Bars", "Year"] as const;
 type ChartType = (typeof TYPES)[number];
+
+const HEADINGS: Record<ChartType, string> = {
+  Line: "Habits done per day",
+  Area: "Done per day, by habit",
+  Bars: "Done vs missed",
+  Year: "This year",
+};
 
 export default memo(function Charts({
   days,
   scores,
+  missed,
+  series,
   max,
   elapsed,
-  habits,
   yearly,
 }: {
   days: number;
   scores: number[];
+  missed: number[];
+  series: Series[];
   max: number;
   elapsed: number;
-  habits: { id: string; name: string; done: number }[];
   yearly: { label: string; pct: number | null; current: boolean }[];
 }) {
   const [type, setType] = useState<ChartType>("Line");
   const id = useId();
+  // Habits the area chart couldn't name inside their band; only these get a legend entry.
+  const [unlabeled, setUnlabeled] = useState<string[]>([]);
+  const onUnlabeled = useCallback((ids: string[]) => setUnlabeled(ids), []);
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   // Arrow keys, Home and End move between tabs and select as they go (WAI-ARIA tabs pattern).
@@ -45,7 +57,7 @@ export default memo(function Charts({
     <section className="mt-6 flex max-h-111 flex-1 flex-col short:mt-4">
       <div className="mb-3 flex items-center justify-between gap-4">
         <h2 className="text-sm text-zinc-500 dark:text-zinc-400">
-          {type === "Habits" ? "Per habit" : type === "Year" ? "This year" : "Daily score"}
+          {HEADINGS[type]}
         </h2>
         <div role="tablist" aria-label="Chart type" onKeyDown={onTabKey} className="flex rounded-lg bg-zinc-100 dark:bg-zinc-900 p-0.5 text-sm">
           {TYPES.map((t, i) => (
@@ -76,16 +88,19 @@ export default memo(function Charts({
         tabIndex={0}
         className="flex min-h-56 flex-1 flex-col rounded-xl border border-zinc-200 dark:border-zinc-800 short:min-h-48 outline-none focus-visible:ring-2 focus-visible:ring-zinc-900 dark:focus-visible:ring-zinc-100"
       >
-        {(type === "Line" || type === "Bars") && (
+        {(type === "Line" || type === "Area" || type === "Bars") && (
           <div className="relative my-4 flex-1">
             {/* Left gutter matches the grid's number + habit columns (w-8 + w-28 / lg:w-36 / xl:w-44). */}
             <div className="absolute inset-y-0 left-36 right-0 lg:left-44 xl:left-52">
               <ScoreGraph
                 days={days}
                 scores={scores}
+                missed={missed}
+                series={series}
                 max={max}
                 elapsed={elapsed}
-                variant={type === "Line" ? "line" : "bar"}
+                variant={type === "Line" ? "line" : type === "Area" ? "area" : "bar"}
+                onUnlabeled={onUnlabeled}
               />
               {elapsed === 0 && (
                 <p className="absolute inset-0 grid place-items-center text-sm text-zinc-400 dark:text-zinc-500">
@@ -96,24 +111,23 @@ export default memo(function Charts({
           </div>
         )}
 
-        {type === "Habits" && (
-          // Two columns past six habits, so the list fits the chart's height without scrolling.
-          <ul
-            style={habits.length > 6 ? { gridTemplateRows: `repeat(${Math.ceil(habits.length / 2)}, auto)` } : undefined}
-            className={`grid flex-1 content-center gap-x-10 gap-y-3 p-5 short:gap-y-2 short:p-4 ${habits.length > 6 ? "grid-flow-col grid-cols-2" : ""}`}
-          >
-            {habits.map((h, i) => {
-              const pct = elapsed ? Math.round((h.done / elapsed) * 100) : 0;
-              return (
-                <li key={h.id} className="grid grid-cols-[8rem_1fr_3rem] items-center gap-3 text-sm xl:grid-cols-[10rem_1fr_3rem]">
-                  <span className="truncate text-zinc-700 dark:text-zinc-300">{h.name.trim() || `Habit ${i + 1}`}</span>
-                  <span className="h-2 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
-                    <span className="block h-full rounded-full bg-zinc-900 dark:bg-zinc-100" style={{ width: `${pct}%` }} />
-                  </span>
-                  <span className="text-right tabular-nums text-zinc-500 dark:text-zinc-400">{pct}%</span>
-                </li>
-              );
-            })}
+        {(type === "Bars" || (type === "Area" && unlabeled.length > 0)) && elapsed > 0 && (
+          // Sits under the plot, starting where the plot does.
+          <ul className="-mt-1 mb-3 flex flex-wrap gap-x-4 gap-y-1 pr-4 pl-36 text-xs text-zinc-500 dark:text-zinc-400 lg:pl-44 xl:pl-52">
+            {(type === "Area"
+              ? series
+                  .map((s, i) => ({ key: s.id, label: s.name.trim() || `Habit ${i + 1}`, swatch: { background: habitColor(i) }, cls: "" }))
+                  .filter((l) => unlabeled.includes(l.key))
+              : [
+                  { key: "done", label: "Done", swatch: undefined, cls: "bg-zinc-900 dark:bg-zinc-100" },
+                  { key: "missed", label: "Missed", swatch: undefined, cls: "bg-rose-400 dark:bg-rose-500" },
+                ]
+            ).map((l) => (
+              <li key={l.key} className="flex min-w-0 items-center gap-1.5">
+                <span className={`size-2.5 shrink-0 rounded-sm ${l.cls}`} style={l.swatch} />
+                <span className="max-w-32 truncate">{l.label}</span>
+              </li>
+            ))}
           </ul>
         )}
 

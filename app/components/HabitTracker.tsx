@@ -147,9 +147,20 @@ function Tracker({ today, months: initialMonths, error: initialError }: Loaded) 
       ),
     [record, days],
   );
-  const habitStats = useMemo(
-    () => record.habits.map((h) => ({ ...h, done: doneCount(record, h.id) })),
-    [record],
+  const missed = useMemo(
+    () =>
+      Array.from({ length: days }, (_, i) =>
+        record.habits.reduce((n, h) => n + (record.checks[h.id]?.[i + 1] === 2 ? 1 : 0), 0),
+      ),
+    [record, days],
+  );
+  const series = useMemo(
+    () =>
+      record.habits.map((h) => ({
+        ...h,
+        done: Array.from({ length: days }, (_, i) => (record.checks[h.id]?.[i + 1] === 1 ? 1 : 0)),
+      })),
+    [record, days],
   );
   const yearly = useMemo(
     () =>
@@ -465,9 +476,10 @@ function Tracker({ today, months: initialMonths, error: initialError }: Loaded) 
       <Charts
         days={days}
         scores={scores}
+        missed={missed}
+        series={series}
         max={record.habits.length}
         elapsed={elapsed}
-        habits={habitStats}
         yearly={yearly}
       />
     </div>
