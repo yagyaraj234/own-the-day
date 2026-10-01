@@ -56,8 +56,44 @@ export function getAllMonths(): Promise<MonthRecord[]> {
   return run("readonly", (s) => s.getAll() as IDBRequest<MonthRecord[]>);
 }
 
-export async function putMonth(record: MonthRecord): Promise<void> {
-  await run("readwrite", (s) => s.put(record));
+export function getMonth(key: string): Promise<MonthRecord | undefined> {
+  return run("readonly", (s) => s.get(key) as IDBRequest<MonthRecord | undefined>);
+}
+
+// Other windows of the app hear which months changed, so they can re-read them.
+const channel = typeof BroadcastChannel !== "undefined" ? new BroadcastChannel(DB_NAME) : null;
+
+export function onMonthsChanged(fn: (keys: string[]) => void): () => void {
+  if (!channel) return () => {};
+  const listener = (e: MessageEvent<{ keys: string[] }>) => fn(e.data.keys);
+  channel.addEventListener("message", listener);
+  return () => channel.removeEventListener("message", listener);
+}
+
+// Reads, changes and writes a month in one transaction, so the change applies to what's stored
+// now rather than to a copy another window may have since overwritten. `fallback` stands in for
+// a month that hasn't been saved yet.
+export async function updateMonth(
+  key: string,
+  fallback: MonthRecord,
+  change: (record: MonthRecord) => MonthRecord,
+): Promise<MonthRecord> {
+  const db = await openDB();
+  const next = await new Promise<MonthRecord>((resolve, reject) => {
+    const tx = db.transaction(STORE, "readwrite");
+    const store = tx.objectStore(STORE);
+    let result: MonthRecord;
+    const req = store.get(key);
+    req.onsuccess = () => {
+      result = change((req.result as MonthRecord | undefined) ?? fallback);
+      store.put(result);
+    };
+    tx.oncomplete = () => resolve(result);
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
+  });
+  channel?.postMessage({ keys: [key] });
+  return next;
 }
 
 // One transaction, so a restore lands completely or not at all.
@@ -71,6 +107,7 @@ export async function putMonths(records: MonthRecord[]): Promise<void> {
     tx.onerror = () => reject(tx.error);
     tx.onabort = () => reject(tx.error);
   });
+  channel?.postMessage({ keys: records.map((r) => r.key) });
 }
 
 // Without this the browser may evict the database when the disk runs low. Chrome grants or
