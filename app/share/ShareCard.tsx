@@ -39,6 +39,12 @@ export default function ShareCard({ shared, host, k = 1 }: { shared: SharedMonth
   const chartH = body - gridH - 2;
   const cell = (CARD_W - PAD * 2 - 2 - NAME_W) / days;
   const box = Math.min(20, rowH - 8, cell - 6);
+  // Columns in whole output pixels (some a pixel wider than others) and boxes at whole offsets
+  // inside them. Fractional positions made Satori space the boxes unevenly and shift the ticks.
+  const colX = (i: number) => Math.round(u(cell * i));
+  const colW = (i: number) => colX(i + 1) - colX(i);
+  const boxPx = Math.round(u(box));
+  const boxOffset = (i: number) => Math.round((colW(i) - boxPx) / 2);
 
   const panel = {
     display: "flex", flexDirection: "column" as const, border: `${u(1)}px solid ${C.zinc200}`,
@@ -79,7 +85,7 @@ export default function ShareCard({ shared, host, k = 1 }: { shared: SharedMonth
             const wd = new Date(year, month, d).getDay();
             const isToday = d === todayDay;
             return (
-              <div key={d} style={{ display: "flex", alignItems: "center", justifyContent: "center", width: u(cell) }}>
+              <div key={d} style={{ display: "flex", alignItems: "center", justifyContent: "center", width: colW(i) }}>
                 <div
                   style={{
                     display: "flex", alignItems: "center", justifyContent: "center", width: u(20), height: u(20),
@@ -97,6 +103,8 @@ export default function ShareCard({ shared, host, k = 1 }: { shared: SharedMonth
 
         {habits.map((habit, r) => {
           const marks = checks[habit.id] ?? {};
+          const innerH = u(rowH) - (r ? u(1) : 0); // the row's top border eats into its height
+          const boxTop = Math.round((innerH - boxPx) / 2);
           return (
             <div key={habit.id} style={{ display: "flex", height: u(rowH), borderTop: r ? `${u(1)}px solid ${C.zinc100}` : "none" }}>
               <div
@@ -112,26 +120,60 @@ export default function ShareCard({ shared, host, k = 1 }: { shared: SharedMonth
                   {habit.name.trim() || `Habit ${r + 1}`}
                 </div>
               </div>
-              {Array.from({ length: days }, (_, i) => {
-                const d = i + 1;
-                const mark = marks[d];
-                const link = (side: "left" | "right") => (
-                  <div style={{ position: "absolute", [side]: 0, top: u(rowH / 2 - 3), width: u(cell / 2), height: u(6), background: C.emerald100 }} />
-                );
-                return (
-                  <div
-                    key={d}
-                    style={{
-                      position: "relative", display: "flex", alignItems: "center", justifyContent: "center",
-                      width: u(cell), background: d === todayDay ? C.zinc50 : "transparent",
-                    }}
-                  >
-                    {mark === 1 && marks[d - 1] === 1 && link("left")}
-                    {mark === 1 && marks[d + 1] === 1 && link("right")}
-                    <Box mark={mark} future={d > elapsed} size={u(box)} k={k} />
-                  </div>
-                );
-              })}
+              <div style={{ position: "relative", display: "flex", width: colX(days) }}>
+                {Array.from({ length: days }, (_, i) => {
+                  const d = i + 1;
+                  const mark = marks[d];
+                  const w = colW(i);
+                  const boxLeft = boxOffset(i);
+                  const link = (side: "left" | "right") => (
+                    <div
+                      style={{
+                        position: "absolute", left: side === "left" ? 0 : boxLeft, top: boxTop + Math.round(boxPx / 2) - 3 * k,
+                        width: side === "left" ? boxLeft + 1 : w - boxLeft, height: 6 * k, background: C.emerald100,
+                      }}
+                    />
+                  );
+                  return (
+                    <div
+                      key={d}
+                      style={{
+                        position: "relative", display: "flex", width: w,
+                        background: d === todayDay ? C.zinc50 : "transparent",
+                      }}
+                    >
+                      {mark === 1 && marks[d - 1] === 1 && link("left")}
+                      {mark === 1 && marks[d + 1] === 1 && link("right")}
+                      <div style={{ position: "absolute", left: boxLeft, top: boxTop, display: "flex" }}>
+                        <Box mark={mark} future={d > elapsed} size={boxPx} k={k} />
+                      </div>
+                    </div>
+                  );
+                })}
+                {/* Every tick in the row as one SVG over the boxes. Satori shifts rotated elements by
+                    a pixel or two depending on where they sit, and an SVG per box is slow to render. */}
+                <svg
+                  width={colX(days)}
+                  height={innerH}
+                  viewBox={`0 0 ${colX(days)} ${innerH}`}
+                  style={{ position: "absolute", left: 0, top: 0 }}
+                >
+                  <path
+                    d={Array.from({ length: days }, (_, i) => i)
+                      .filter((i) => marks[i + 1] === 1)
+                      .map((i) => {
+                        const bx = colX(i) + boxOffset(i), b = boxPx;
+                        return `M${bx + b * 0.28},${boxTop + b * 0.52} L${bx + b * 0.44},${boxTop + b * 0.68} L${bx + b * 0.73},${boxTop + b * 0.35}`;
+                      })
+                      .join(" ")}
+                    fill="none"
+                    stroke="#ffffff"
+                    strokeWidth={Math.max(boxPx * 0.11, 1.5 * k)}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </div>
             </div>
           );
         })}
@@ -258,24 +300,10 @@ function Box({ mark, future, size, k }: { mark?: 1 | 2; future: boolean; size: n
     display: "flex", alignItems: "center", justifyContent: "center", width: Math.round(size), height: Math.round(size),
     borderRadius: size * 0.27, flexShrink: 0,
   };
-  // Marks are drawn with borders and rotated bars rather than an SVG per box: Satori rasterizes
-  // every SVG separately, which made a full month take seconds. Everything is placed absolutely
-  // from the box's inner size so the marks stay centered at any row height.
-  // Whole pixels throughout: Satori misplaces rotated elements at fractional offsets.
-  const inner = Math.round(size) - 2 * k;
   const px = (n: number) => Math.round(n);
+  // The tick is drawn by the row's SVG overlay, so a done box is just the green square.
   if (mark === 1) {
-    const w = px(size * 0.24), h = px(size * 0.46), t = px(Math.max(size * 0.11, 1.5 * k));
-    return (
-      <div style={{ ...base, position: "relative", background: C.emerald500, border: `${k}px solid ${C.emerald600}` }}>
-        <div
-          style={{
-            position: "absolute", left: px((inner - w) / 2), top: px((inner - h) / 2 - size * 0.06), width: w, height: h,
-            borderRight: `${t}px solid #ffffff`, borderBottom: `${t}px solid #ffffff`, transform: "rotate(45deg)",
-          }}
-        />
-      </div>
-    );
+    return <div style={{ ...base, background: C.emerald500, border: `${k}px solid ${C.emerald600}` }} />;
   }
   if (mark === 2) {
     // A text "×" rather than two rotated bars, which Satori misplaces inside the grid.

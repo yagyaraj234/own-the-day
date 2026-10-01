@@ -28,7 +28,7 @@ const fromBase64Url = (s: string) =>
 
 // The card image is cached for a year per URL, so bump this whenever its design changes or
 // browsers and social sites keep showing the old one.
-const CARD_VERSION = 5;
+const CARD_VERSION = 6;
 
 export const shareImageUrl = (data: string, scale: 1 | 2 = 1) =>
   `/share/image?d=${data}&v=${CARD_VERSION}${scale === 2 ? "&s=2" : ""}`;
