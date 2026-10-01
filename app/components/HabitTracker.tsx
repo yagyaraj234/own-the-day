@@ -1,7 +1,8 @@
 "use client";
 
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { getAllMonths, putMonth, type Habit, type Mark, type MonthRecord } from "@/lib/db";
+import { getAllMonths, putMonth, putMonths, requestPersistence, type Habit, type Mark, type MonthRecord } from "@/lib/db";
+import BackupButton from "./BackupButton";
 import Charts from "./Charts";
 import ShareButton from "./ShareButton";
 import ThemeToggle from "./ThemeToggle";
@@ -214,6 +215,7 @@ function Tracker({ today, months: initialMonths, error: initialError }: Loaded) 
 
   const save = (next: MonthRecord) => {
     setMonths((prev) => new Map(prev).set(next.key, next));
+    requestPersistence();
     putMonth(next)
       .then(() => {
         // Keep the indicator up while saves keep coming; hide it once they stop.
@@ -222,6 +224,16 @@ function Tracker({ today, months: initialMonths, error: initialError }: Loaded) 
         savedTimer.current = setTimeout(() => setSaved(false), 1200);
       })
       .catch(() => setError("Last change couldn't be saved."));
+  };
+
+  const restore = async (records: MonthRecord[]) => {
+    await putMonths(records);
+    requestPersistence();
+    setMonths((prev) => {
+      const next = new Map(prev);
+      for (const r of records) next.set(r.key, r);
+      return next;
+    });
   };
 
   const toggle = (habitId: string, day: number) => {
