@@ -25,7 +25,10 @@ export default function ScoreGraph({
 
   useLayoutEffect(() => {
     const el = box.current!;
-    const measure = () => setSize({ w: el.clientWidth, h: el.clientHeight });
+    const measure = () => {
+      const w = el.clientWidth, h = el.clientHeight;
+      setSize((s) => (s && s.w === w && s.h === h ? s : { w, h }));
+    };
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(el);
@@ -65,16 +68,16 @@ function Plot({
     >
       {Array.from({ length: max + 1 }, (_, v) => (
         <g key={`y${v}`}>
-          <line x1={0} x2={W} y1={y(v)} y2={y(v)} className="stroke-zinc-100" />
+          <line x1={0} x2={W} y1={y(v)} y2={y(v)} className="stroke-zinc-100 dark:stroke-zinc-800" />
           {v % yStep === 0 && (
-            <text x={-8} y={y(v)} dy="0.35em" textAnchor="end" className="fill-zinc-400 text-[11px] tabular-nums">
+            <text x={-8} y={y(v)} dy="0.35em" textAnchor="end" className="fill-zinc-400 dark:fill-zinc-500 text-[11px] tabular-nums">
               {v}
             </text>
           )}
         </g>
       ))}
       {Array.from({ length: days }, (_, i) => (
-        <text key={`d${i}`} x={x(i + 1)} y={H - 6} textAnchor="middle" className="fill-zinc-400 text-[11px] tabular-nums">
+        <text key={`d${i}`} x={x(i + 1)} y={H - 6} textAnchor="middle" className="fill-zinc-400 dark:fill-zinc-500 text-[11px] tabular-nums">
           {i + 1}
         </text>
       ))}
@@ -88,17 +91,17 @@ function Plot({
             width={colW * 0.6}
             height={y(0) - y(v)}
             rx={2}
-            className="fill-zinc-900"
+            className="fill-zinc-900 dark:fill-zinc-100"
           >
             <title>{`Day ${i + 1}: ${v}/${max}`}</title>
           </rect>
         ))}
 
       {variant === "line" && line && (
-        <path d={line} fill="none" className="stroke-zinc-900" strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" />
+        <path d={line} fill="none" className="stroke-zinc-900 dark:stroke-zinc-100" strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" />
       )}
       {variant === "line" && points.map(([px, py], i) => (
-        <circle key={`p${i}`} cx={px} cy={py} r={3} className="fill-zinc-900">
+        <circle key={`p${i}`} cx={px} cy={py} r={3} className="fill-zinc-900 dark:fill-zinc-100">
           <title>{`Day ${i + 1}: ${scores[i]}/${max}`}</title>
         </circle>
       ))}

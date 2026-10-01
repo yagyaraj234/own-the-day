@@ -5,12 +5,45 @@
   --font-mono: var(--font-geist-mono);
 }
 
+/* Dark follows the system unless a choice is saved, which the inline script in the layout puts
+   on <html> as data-theme before first paint. */
+@custom-variant dark {
+  &:where([data-theme="dark"], [data-theme="dark"] *) {
+    @slot;
+  }
+  @media (prefers-color-scheme: dark) {
+    &:where(:root:not([data-theme="light"]), :root:not([data-theme="light"]) *) {
+      @slot;
+    }
+  }
+}
+
 /* Short viewports (landscape laptops, tablets) tighten vertical rhythm so more fits unscaled. */
 @custom-variant short (@media (max-height: 900px));
 
+:root {
+  color-scheme: light;
+  /* Day column highlight in the tracker grid. */
+  --col-hover: var(--color-zinc-50);
+  --col-num-hover-bg: color-mix(in oklab, var(--color-zinc-200) 70%, transparent);
+  --col-num-hover-fg: var(--color-zinc-900);
+
+  @variant dark {
+    color-scheme: dark;
+    --col-hover: color-mix(in oklab, var(--color-zinc-900) 70%, transparent);
+    --col-num-hover-bg: var(--color-zinc-800);
+    --col-num-hover-fg: var(--color-zinc-100);
+  }
+}
+
 body {
-  background: #ffffff;
-  color: #18181b;
+  background: var(--color-white);
+  color: var(--color-zinc-900);
+
+  @variant dark {
+    background: var(--color-zinc-950);
+    color: var(--color-zinc-100);
+  }
 }
 
 @keyframes check-draw {

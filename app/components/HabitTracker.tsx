@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { getAllMonths, putMonth, type Habit, type Mark, type MonthRecord } from "@/lib/db";
 import Charts from "./Charts";
 import ShareButton from "./ShareButton";
+import ThemeToggle from "./ThemeToggle";
 
 const MIN_HABITS = 3;
 const MAX_HABITS = 12;
@@ -22,9 +23,14 @@ const DEFAULT_HABITS: Habit[] = [
 const COLUMN_HOVER_CSS = Array.from({ length: 31 }, (_, i) => {
   const d = i + 1;
   const on = `[data-hover-day="${d}"]`;
-  return `${on} [data-col="${d}"]{background:var(--color-zinc-50)}` +
-    `${on} [data-col-num="${d}"]:not([data-today]){background:color-mix(in oklab,var(--color-zinc-200) 70%,transparent);color:var(--color-zinc-900)}`;
+  return `${on} [data-col="${d}"]{background:var(--col-hover)}` +
+    `${on} [data-col-num="${d}"]:not([data-today]){background:var(--col-num-hover-bg);color:var(--col-num-hover-fg)}`;
 }).join("");
+
+const DATE_LABEL = new Intl.DateTimeFormat(undefined, { weekday: "short", month: "short", day: "numeric" });
+const NO_MARKS: Record<number, Mark> = {};
+
+type Day = { d: number; weekend: boolean; label: string };
 
 const monthKey = (y: number, m: number) => `${y}-${String(m + 1).padStart(2, "0")}`;
 const daysIn = (y: number, m: number) => new Date(y, m + 1, 0).getDate();
@@ -68,12 +74,45 @@ function doneCount(record: MonthRecord, habitId: string) {
   return Object.values(record.checks[habitId] ?? {}).filter((v) => v === 1).length;
 }
 
+type Loaded = { today: Date; months: Map<string, MonthRecord>; error: string | null };
+
 export default function HabitTracker() {
-  const [today, setToday] = useState<Date | null>(null);
-  const [year, setYear] = useState(0);
-  const [month, setMonth] = useState(0);
-  const [months, setMonths] = useState<Map<string, MonthRecord> | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState<Loaded | null>(null);
+
+  useEffect(() => {
+    getAllMonths()
+      .then(
+        (all) => ({ months: new Map(all.map((r) => [r.key, r])), error: null }),
+        () => ({
+          months: new Map<string, MonthRecord>(),
+          error: "Couldn't open local storage. Your browser may be blocking IndexedDB.",
+        }),
+      )
+      .then((r) => setLoaded({ ...r, today: new Date() }));
+  }, []);
+
+  if (!loaded) {
+    return <div className="grid flex-1 place-items-center text-sm text-zinc-400 dark:text-zinc-500">Loading…</div>;
+  }
+  return <Tracker {...loaded} />;
+}
+
+// Stable across renders, so memoized rows only re-render when their own data changes.
+type RowActions = {
+  toggle: (habitId: string, day: number) => void;
+  rename: (habitId: string, name: string) => void;
+  remove: (habitId: string) => void;
+  dragStart: (e: React.PointerEvent<HTMLElement>, row: number) => void;
+  dragMove: (e: React.PointerEvent) => void;
+  dragEnd: () => void;
+  handleKey: (e: React.KeyboardEvent, row: number) => void;
+};
+
+function Tracker({ today, months: initialMonths, error: initialError }: Loaded) {
+  const [year, setYear] = useState(today.getFullYear());
+  const [month, setMonth] = useState(today.getMonth());
+  const [months, setMonths] = useState(initialMonths);
+  const [error, setError] = useState(initialError);
   const tableRef = useRef<HTMLTableElement>(null);
   const [lastToggled, setLastToggled] = useState<{ key: string; habitId: string; day: number } | null>(null);
   const [saved, setSaved] = useState(false);
@@ -84,26 +123,57 @@ export default function HabitTracker() {
   // Row positions captured just before a reorder commits, so rows can glide from where they were.
   const flipFrom = useRef<Map<string, number> | null>(null);
 
-  useEffect(() => {
-    getAllMonths()
-      .then((all) => new Map(all.map((r) => [r.key, r])))
-      .catch(() => {
-        setError("Couldn't open local storage. Your browser may be blocking IndexedDB.");
-        return new Map<string, MonthRecord>();
-      })
-      .then((loaded) => {
-        const now = new Date();
-        setToday(now);
-        setYear(now.getFullYear());
-        setMonth(now.getMonth());
-        setMonths(loaded);
-      });
-  }, []);
-
   const key = monthKey(year, month);
-  const record = useMemo(
-    () => (months ? months.get(key) ?? blankMonth(key, months) : null),
-    [months, key],
+  const record = useMemo(() => months.get(key) ?? blankMonth(key, months), [months, key]);
+
+  const days = daysIn(year, month);
+  const elapsed = elapsedDays(year, month, today);
+  const isCurrentMonth = year === today.getFullYear() && month === today.getMonth();
+
+  const dayList = useMemo<Day[]>(
+    () =>
+      Array.from({ length: daysIn(year, month) }, (_, i) => {
+        const date = new Date(year, month, i + 1);
+        const weekday = date.getDay();
+        return { d: i + 1, weekend: weekday === 0 || weekday === 6, label: DATE_LABEL.format(date) };
+      }),
+    [year, month],
+  );
+
+  const scores = useMemo(
+    () =>
+      Array.from({ length: days }, (_, i) =>
+        record.habits.reduce((n, h) => n + (record.checks[h.id]?.[i + 1] === 1 ? 1 : 0), 0),
+      ),
+    [record, days],
+  );
+  const habitStats = useMemo(
+    () => record.habits.map((h) => ({ ...h, done: doneCount(record, h.id) })),
+    [record],
+  );
+  const yearly = useMemo(
+    () =>
+      MONTHS.map((label, m) => {
+        const r = months.get(monthKey(year, m));
+        const possibleM = r ? r.habits.length * elapsedDays(year, m, today) : 0;
+        const doneM = r ? r.habits.reduce((n, h) => n + doneCount(r, h.id), 0) : 0;
+        return { label, pct: possibleM ? Math.round((doneM / possibleM) * 100) : null, current: m === month };
+      }),
+    [months, year, month, today],
+  );
+
+  const actionsRef = useRef<RowActions>(null);
+  const rowActions = useMemo<RowActions>(
+    () => ({
+      toggle: (id, d) => actionsRef.current!.toggle(id, d),
+      rename: (id, name) => actionsRef.current!.rename(id, name),
+      remove: (id) => actionsRef.current!.remove(id),
+      dragStart: (e, row) => actionsRef.current!.dragStart(e, row),
+      dragMove: (e) => actionsRef.current!.dragMove(e),
+      dragEnd: () => actionsRef.current!.dragEnd(),
+      handleKey: (e, row) => actionsRef.current!.handleKey(e, row),
+    }),
+    [],
   );
 
   useLayoutEffect(() => {
@@ -121,14 +191,6 @@ export default function HabitTracker() {
       });
     }
   }, [record, drag]);
-
-  if (!today || !months || !record) {
-    return <div className="grid flex-1 place-items-center text-sm text-zinc-400">Loading…</div>;
-  }
-
-  const days = daysIn(year, month);
-  const elapsed = elapsedDays(year, month, today);
-  const isCurrentMonth = year === today.getFullYear() && month === today.getMonth();
 
   const save = (next: MonthRecord) => {
     setMonths((prev) => new Map(prev).set(next.key, next));
@@ -168,6 +230,11 @@ export default function HabitTracker() {
     const target = document.querySelector<HTMLButtonElement>(`[data-cell="${nr}-${nd}"]`);
     target?.focus();
     highlightDay(nd);
+  };
+
+  // Keyboard focus sets the column highlight too, so drop it once focus leaves the grid.
+  const onGridBlur = (e: React.FocusEvent) => {
+    if (!e.currentTarget.contains(e.relatedTarget)) highlightDay(null);
   };
 
   const highlightDay = (d: number | null) => {
@@ -253,9 +320,12 @@ export default function HabitTracker() {
     return 0;
   };
 
-  const scores = Array.from({ length: days }, (_, i) =>
-    record.habits.reduce((n, h) => n + (record.checks[h.id]?.[i + 1] === 1 ? 1 : 0), 0),
-  );
+  useLayoutEffect(() => {
+    actionsRef.current = {
+      toggle, rename, remove: removeHabit, dragStart: startDrag, dragMove: moveDrag, dragEnd: endDrag, handleKey: onHandleKey,
+    };
+  });
+
   const possible = record.habits.length * elapsed;
   const totalDone = scores.reduce((a, b) => a + b, 0);
 
@@ -272,25 +342,25 @@ export default function HabitTracker() {
     <div className="flex w-full flex-1 flex-col justify-center px-5 py-8 short:py-5 lg:px-8">
       <header className="mb-6 flex shrink-0 short:mb-4 items-center justify-between gap-4">
         <div className="flex items-center gap-1">
-          <button type="button" onClick={() => shiftMonth(-1)} aria-label="Previous month" className="rounded-md px-2 py-1 text-xl text-zinc-400 transition-[color,background-color,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:bg-zinc-100 hover:text-zinc-900 active:scale-[0.97] motion-reduce:active:scale-100">‹</button>
-          <h1 className="min-w-44 text-center text-2xl font-semibold tracking-tight text-zinc-900">
+          <button type="button" onClick={() => shiftMonth(-1)} aria-label="Previous month" className="rounded-md px-2 py-1 text-xl text-zinc-400 dark:text-zinc-500 transition-[color,background-color,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-900 dark:hover:text-zinc-100 active:scale-[0.97] motion-reduce:active:scale-100">‹</button>
+          <h1 className="min-w-44 text-center text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
             {MONTH_NAMES[month]} {year}
           </h1>
-          <button type="button" onClick={() => shiftMonth(1)} aria-label="Next month" className="rounded-md px-2 py-1 text-xl text-zinc-400 transition-[color,background-color,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:bg-zinc-100 hover:text-zinc-900 active:scale-[0.97] motion-reduce:active:scale-100">›</button>
+          <button type="button" onClick={() => shiftMonth(1)} aria-label="Next month" className="rounded-md px-2 py-1 text-xl text-zinc-400 dark:text-zinc-500 transition-[color,background-color,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-900 dark:hover:text-zinc-100 active:scale-[0.97] motion-reduce:active:scale-100">›</button>
           {!isCurrentMonth && (
             <button
               type="button"
               onClick={() => { setYear(today.getFullYear()); setMonth(today.getMonth()); }}
-              className="ml-2 rounded-md px-2 py-1 text-sm text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900"
+              className="ml-2 rounded-md px-2 py-1 text-sm text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-900 dark:hover:text-zinc-100"
             >
               Today
             </button>
           )}
         </div>
-        <div className="flex items-center gap-3 text-sm tabular-nums text-zinc-500">
+        <div className="flex items-center gap-3 text-sm tabular-nums text-zinc-500 dark:text-zinc-400">
           <span
             aria-hidden={!saved}
-            className={`flex items-center gap-1 text-xs text-zinc-400 transition-opacity duration-200 ease-[cubic-bezier(0.23,1,0.32,1)] ${
+            className={`flex items-center gap-1 text-xs text-zinc-400 dark:text-zinc-500 transition-opacity duration-200 ease-[cubic-bezier(0.23,1,0.32,1)] ${
               saved ? "opacity-100" : "opacity-0"
             }`}
           >
@@ -307,44 +377,42 @@ export default function HabitTracker() {
             elapsed={elapsed}
             todayDay={isCurrentMonth ? today.getDate() : 0}
           />
+          <ThemeToggle />
         </div>
       </header>
 
       {error && (
-        <p role="alert" className="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+        <p role="alert" className="mb-4 rounded-lg border border-rose-200 dark:border-rose-900/60 bg-rose-50 dark:bg-rose-950/50 px-3 py-2 text-sm text-rose-700 dark:text-rose-300">
           {error}
         </p>
       )}
 
       <style>{COLUMN_HOVER_CSS}</style>
-      <section className={`overflow-hidden rounded-xl border border-zinc-200${drag ? " cursor-grabbing select-none" : ""}`} onMouseOver={onGridHover} onMouseLeave={() => highlightDay(null)}>
-        <table ref={tableRef} className="w-full table-fixed border-collapse text-zinc-900">
+      <section className={`overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800${drag ? " cursor-grabbing select-none" : ""}`} onMouseOver={onGridHover} onMouseLeave={() => highlightDay(null)}>
+        <table ref={tableRef} className="w-full table-fixed border-collapse text-zinc-900 dark:text-zinc-100">
           <thead>
             <tr>
-              <th className="sticky left-0 z-20 w-8 border-b border-zinc-200 bg-white" />
-              <th className="sticky left-8 z-20 border-b border-r border-zinc-200 bg-white px-2 py-3 text-left text-xs font-medium uppercase tracking-wide text-zinc-500 w-28 lg:w-36 xl:w-44">
+              <th className="sticky left-0 z-20 w-8 border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950" />
+              <th className="sticky left-8 z-20 border-b border-r border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-2 py-3 text-left text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400 w-28 lg:w-36 xl:w-44">
                 Habit
               </th>
-              {Array.from({ length: days }, (_, i) => {
-                const d = i + 1;
-                const weekday = new Date(year, month, d).getDay();
-                const weekend = weekday === 0 || weekday === 6;
+              {dayList.map(({ d, weekend }) => {
                 const isToday = isCurrentMonth && d === today.getDate();
                 return (
                   <th
                     key={d}
                     data-col={d}
-                    className="border-b border-zinc-200 px-0 py-2 text-center font-normal"
+                    className="border-b border-zinc-200 dark:border-zinc-800 px-0 py-2 text-center font-normal"
                   >
                     <span
                       data-col-num={d}
                       data-today={isToday || undefined}
                       className={`mx-auto grid size-5 place-items-center rounded-full text-[11px] tabular-nums lg:size-6 lg:text-xs ${
                         isToday
-                          ? "bg-zinc-900 font-semibold text-white"
+                          ? "bg-zinc-900 dark:bg-zinc-100 font-semibold text-white dark:text-zinc-900"
                           : weekend
-                              ? "text-zinc-400"
-                              : "text-zinc-600"
+                              ? "text-zinc-400 dark:text-zinc-500"
+                              : "text-zinc-600 dark:text-zinc-400"
                       }`}
                     >
                       {d}
@@ -354,41 +422,33 @@ export default function HabitTracker() {
               })}
             </tr>
           </thead>
-          <tbody ref={tbodyRef} onKeyDown={onGridKey}>
+          <tbody ref={tbodyRef} onKeyDown={onGridKey} onBlur={onGridBlur}>
             {record.habits.map((habit, row) => (
               <HabitRow
                 key={habit.id}
                 row={row}
                 habit={habit}
-                marks={record.checks[habit.id] ?? {}}
+                marks={record.checks[habit.id] ?? NO_MARKS}
                 elapsed={elapsed}
-                days={days}
-                year={year}
-                month={month}
+                dayList={dayList}
                 todayDay={isCurrentMonth ? today.getDate() : 0}
                 animateDay={lastToggled?.key === key && lastToggled.habitId === habit.id ? lastToggled.day : 0}
                 canRemove={record.habits.length > MIN_HABITS}
                 shift={shiftFor(row)}
                 dragging={drag?.id === habit.id}
                 dragActive={drag !== null}
-                onDragStart={(e) => startDrag(e, row)}
-                onDragMove={moveDrag}
-                onDragEnd={endDrag}
-                onHandleKey={(e) => onHandleKey(e, row)}
-                onToggle={(d) => toggle(habit.id, d)}
-                onRename={(name) => rename(habit.id, name)}
-                onRemove={() => removeHabit(habit.id)}
+                actions={rowActions}
               />
             ))}
           </tbody>
         </table>
       </section>
 
-      <div className="mt-3 flex shrink-0 flex-wrap items-center justify-between gap-3 text-xs text-zinc-500">
+      <div className="mt-3 flex shrink-0 flex-wrap items-center justify-between gap-3 text-xs text-zinc-500 dark:text-zinc-400">
         <p className="flex items-center gap-4">
           <span className="flex items-center gap-1.5"><Box mark={1} /> Done</span>
           <span className="flex items-center gap-1.5"><Box mark={2} /> Missed</span>
-          <span className="hidden items-center gap-1 text-zinc-400 md:flex">
+          <span className="hidden items-center gap-1 text-zinc-400 dark:text-zinc-500 md:flex">
             <Kbd>←</Kbd><Kbd>→</Kbd><Kbd>↑</Kbd><Kbd>↓</Kbd> move · <Kbd>Space</Kbd> mark · drag <span className="font-medium">⋮⋮</span> to reorder
           </span>
         </p>
@@ -396,9 +456,9 @@ export default function HabitTracker() {
           type="button"
           onClick={addHabit}
           disabled={record.habits.length >= MAX_HABITS}
-          className="rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-sm font-medium text-zinc-900 shadow-xs transition-[background-color,transform] duration-150 hover:bg-zinc-50 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-white"
+          className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-1.5 text-sm font-medium text-zinc-900 dark:text-zinc-100 shadow-xs transition-[background-color,transform] duration-150 hover:bg-zinc-50 dark:hover:bg-zinc-800 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-white dark:disabled:hover:bg-zinc-900"
         >
-          + Add habit <span className="text-zinc-400">{record.habits.length}/{MAX_HABITS}</span>
+          + Add habit <span className="text-zinc-400 dark:text-zinc-500">{record.habits.length}/{MAX_HABITS}</span>
         </button>
       </div>
 
@@ -407,50 +467,36 @@ export default function HabitTracker() {
         scores={scores}
         max={record.habits.length}
         elapsed={elapsed}
-        habits={record.habits.map((h) => ({ ...h, done: doneCount(record, h.id) }))}
-        yearly={MONTHS.map((label, m) => {
-          const r = months.get(monthKey(year, m));
-          const possibleM = r ? r.habits.length * elapsedDays(year, m, today) : 0;
-          const doneM = r ? r.habits.reduce((n, h) => n + doneCount(r, h.id), 0) : 0;
-          return { label, pct: possibleM ? Math.round((doneM / possibleM) * 100) : null, current: m === month };
-        })}
+        habits={habitStats}
+        yearly={yearly}
       />
     </div>
   );
 }
 
-function HabitRow({
-  row, habit, marks, elapsed, days, year, month, todayDay, animateDay,
-  canRemove, shift, dragging, dragActive, onDragStart, onDragMove, onDragEnd, onHandleKey,
-  onToggle, onRename, onRemove,
+const HabitRow = memo(function HabitRow({
+  row, habit, marks, elapsed, dayList, todayDay, animateDay,
+  canRemove, shift, dragging, dragActive, actions,
 }: {
   row: number;
   habit: Habit;
   marks: Record<number, Mark>;
   elapsed: number;
-  days: number;
-  year: number;
-  month: number;
+  dayList: Day[];
   todayDay: number;
   animateDay: number;
   canRemove: boolean;
   shift: number;
   dragging: boolean;
   dragActive: boolean;
-  onDragStart: (e: React.PointerEvent<HTMLElement>) => void;
-  onDragMove: (e: React.PointerEvent) => void;
-  onDragEnd: () => void;
-  onHandleKey: (e: React.KeyboardEvent) => void;
-  onToggle: (day: number) => void;
-  onRename: (name: string) => void;
-  onRemove: () => void;
+  actions: RowActions;
 }) {
   const [confirming, setConfirming] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(() => () => clearTimeout(timer.current), []);
 
   const askRemove = () => {
-    if (confirming) return onRemove();
+    if (confirming) return actions.remove(habit.id);
     setConfirming(true);
     timer.current = setTimeout(() => setConfirming(false), 3000);
   };
@@ -464,25 +510,25 @@ function HabitRow({
       style={shift ? { transform: `translateY(${shift}px)` } : undefined}
       className={`group/row ${
         dragging
-          ? "relative z-20 bg-white shadow-[0_8px_24px_-6px_rgb(0_0_0/0.18),0_0_0_1px_rgb(0_0_0/0.06)]"
+          ? "relative z-20 bg-white dark:bg-zinc-900 shadow-[0_8px_24px_-6px_rgb(0_0_0/0.18),0_0_0_1px_rgb(0_0_0/0.06)] dark:shadow-[0_8px_24px_-6px_rgb(0_0_0/0.6),0_0_0_1px_rgb(255_255_255/0.08)]"
           : dragActive
             ? "transition-transform duration-200 ease-[cubic-bezier(0.23,1,0.32,1)] motion-reduce:transition-none"
             : ""
       }`}
     >
-      <td className="sticky left-0 z-10 border-b border-zinc-100 bg-white p-0 group-last/row:border-b-0">
+      <td className="sticky left-0 z-10 border-b border-zinc-100 dark:border-zinc-900 bg-white dark:bg-zinc-950 p-0 group-last/row:border-b-0">
         <button
           type="button"
-          onPointerDown={onDragStart}
-          onPointerMove={onDragMove}
-          onPointerUp={onDragEnd}
-          onPointerCancel={onDragEnd}
-          onKeyDown={onHandleKey}
+          onPointerDown={(e) => actions.dragStart(e, row)}
+          onPointerMove={actions.dragMove}
+          onPointerUp={actions.dragEnd}
+          onPointerCancel={actions.dragEnd}
+          onKeyDown={(e) => actions.handleKey(e, row)}
           aria-label={`Reorder ${label}, position ${index}`}
           aria-keyshortcuts="ArrowUp ArrowDown"
           title="Drag to reorder"
-          className={`group/handle grid h-10 w-full short:h-8 touch-none place-items-center text-xs tabular-nums text-zinc-400 outline-none hover:text-zinc-600 focus-visible:text-zinc-900 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-zinc-900 ${
-            dragging ? "cursor-grabbing text-zinc-600" : "cursor-grab"
+          className={`group/handle grid h-10 w-full short:h-8 touch-none place-items-center text-xs tabular-nums text-zinc-400 dark:text-zinc-500 outline-none hover:text-zinc-600 dark:hover:text-zinc-400 focus-visible:text-zinc-900 dark:focus-visible:text-zinc-100 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-zinc-900 dark:focus-visible:ring-zinc-100 ${
+            dragging ? "cursor-grabbing text-zinc-600 dark:text-zinc-400" : "cursor-grab"
           }`}
         >
           <span className={dragging ? "hidden" : "group-hover/row:hidden group-focus-visible/handle:hidden"}>{index}</span>
@@ -491,15 +537,15 @@ function HabitRow({
           </svg>
         </button>
       </td>
-      <td className="sticky left-8 z-10 border-b border-r border-zinc-100 border-r-zinc-200 bg-white group-last/row:border-b-0 group/name">
+      <td className="sticky left-8 z-10 border-b border-r border-zinc-100 dark:border-zinc-900 border-r-zinc-200 dark:border-r-zinc-800 bg-white dark:bg-zinc-950 group-last/row:border-b-0 group/name">
         <div className="relative flex items-center">
           <input
             value={habit.name}
-            onChange={(e) => onRename(e.target.value)}
+            onChange={(e) => actions.rename(habit.id, e.target.value)}
             placeholder={`Habit ${index}`}
             maxLength={40}
             aria-label={`Habit ${index} name`}
-            className={`w-full min-w-0 rounded-md bg-transparent px-2 py-2 text-sm font-medium text-zinc-900 transition-colors placeholder:font-normal placeholder:text-zinc-300 hover:bg-zinc-50 focus:bg-zinc-50 focus:outline-none ${
+            className={`w-full min-w-0 rounded-md bg-transparent px-2 py-2 text-sm font-medium text-zinc-900 dark:text-zinc-100 transition-colors placeholder:font-normal placeholder:text-zinc-300 dark:placeholder:text-zinc-600 hover:bg-zinc-50 dark:hover:bg-zinc-900 focus:bg-zinc-50 dark:focus:bg-zinc-900 focus:outline-none ${
               // Reserve room for the remove button only while it's visible.
               !canRemove ? "" : confirming ? "pr-20" : "group-hover/name:pr-8 group-focus-within/name:pr-8"
             }`}
@@ -512,7 +558,7 @@ function HabitRow({
               className={`absolute right-1.5 top-1/2 -translate-y-1/2 rounded-md px-1.5 py-0.5 text-xs transition-[opacity,color,background-color] duration-150 ${
                 confirming
                   ? "bg-rose-600 text-white opacity-100"
-                  : "pointer-events-none text-zinc-400 opacity-0 hover:text-rose-600 focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover/name:pointer-events-auto group-hover/name:opacity-100 group-focus-within/name:pointer-events-auto group-focus-within/name:opacity-100"
+                  : "pointer-events-none text-zinc-400 dark:text-zinc-500 opacity-0 hover:text-rose-600 dark:hover:text-rose-400 focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover/name:pointer-events-auto group-hover/name:opacity-100 group-focus-within/name:pointer-events-auto group-focus-within/name:opacity-100"
               }`}
             >
               {confirming ? "Remove?" : "✕"}
@@ -520,32 +566,29 @@ function HabitRow({
           )}
         </div>
       </td>
-      {Array.from({ length: days }, (_, i) => {
-        const d = i + 1;
+      {dayList.map(({ d, label: dateLabel }) => {
         const mark = marks[d];
         const future = d > elapsed;
         const linkLeft = mark === 1 && marks[d - 1] === 1;
         const linkRight = mark === 1 && marks[d + 1] === 1;
         // Only connectors next to the box just toggled fade in, in step with its check.
-        const linkFade = animateDay > 0 && Math.abs(d - animateDay) <= 1 ? " link-fade" : "";
-        const date = new Date(year, month, d);
-        const dateLabel = date.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+        const linkFade = animateDay > 0 && Math.abs(d - animateDay) <= 1 ? "link-fade" : "";
         const state = mark === 1 ? "Done" : mark === 2 ? "Missed" : future ? "Upcoming" : "Not marked";
         return (
           <td
             key={d}
             data-col={d}
-            className={`relative border-b border-zinc-100 p-0 text-center group-last/row:border-b-0 ${
-              d === todayDay ? "bg-zinc-50/60" : ""
+            className={`relative border-b border-zinc-100 dark:border-zinc-900 p-0 text-center group-last/row:border-b-0 ${
+              d === todayDay ? "bg-zinc-50/60 dark:bg-zinc-900/60" : ""
             }`}
           >
-            {linkLeft && <span aria-hidden className={`absolute left-0 right-1/2 top-1/2 h-1.5 -translate-y-1/2 bg-emerald-100${linkFade}`} />}
-            {linkRight && <span aria-hidden className={`absolute left-1/2 right-0 top-1/2 h-1.5 -translate-y-1/2 bg-emerald-100${linkFade}`} />}
+            {linkLeft && <span aria-hidden className={`absolute left-0 right-1/2 top-1/2 h-1.5 -translate-y-1/2 bg-emerald-100 dark:bg-emerald-500/20 ${linkFade}`} />}
+            {linkRight && <span aria-hidden className={`absolute left-1/2 right-0 top-1/2 h-1.5 -translate-y-1/2 bg-emerald-100 dark:bg-emerald-500/20 ${linkFade}`} />}
             <button
               type="button"
               disabled={future}
               data-cell={`${row}-${d}`}
-              onClick={() => onToggle(d)}
+              onClick={() => actions.toggle(habit.id, d)}
               title={`${label} · ${dateLabel} · ${state}`}
               aria-label={`${label}, ${dateLabel}: ${state}`}
               className="group/box relative grid h-10 w-full short:h-8 place-items-center outline-none disabled:cursor-default"
@@ -557,11 +600,11 @@ function HabitRow({
       })}
     </tr>
   );
-}
+});
 
 function Box({ mark, today, future, animate }: { mark?: Mark; today?: boolean; future?: boolean; animate?: boolean }) {
   const base =
-    "relative grid size-[18px] place-items-center rounded-[5px] border lg:size-[22px] lg:rounded-[6px] transition-[transform,background-color,border-color] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] group-active/box:scale-[0.95] motion-reduce:group-active/box:scale-100 group-focus-visible/box:ring-2 group-focus-visible/box:ring-zinc-900 group-focus-visible/box:ring-offset-2";
+    "relative grid size-[18px] place-items-center rounded-[5px] border lg:size-[22px] lg:rounded-[6px] transition-[transform,background-color,border-color] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] group-active/box:scale-[0.95] motion-reduce:group-active/box:scale-100 group-focus-visible/box:ring-2 group-focus-visible/box:ring-zinc-900 dark:group-focus-visible/box:ring-zinc-100 group-focus-visible/box:ring-offset-2 dark:group-focus-visible/box:ring-offset-zinc-950";
 
   if (mark === 1) {
     return (
@@ -583,7 +626,7 @@ function Box({ mark, today, future, animate }: { mark?: Mark; today?: boolean; f
   }
   if (mark === 2) {
     return (
-      <span className={`${base} border-rose-200 bg-rose-50 text-rose-500`}>
+      <span className={`${base} border-rose-200 dark:border-rose-900/60 bg-rose-50 dark:bg-rose-950/50 text-rose-500 dark:text-rose-400`}>
         <svg key="missed" viewBox="0 0 16 16" className={`size-2.5 lg:size-3${animate ? " check-fade" : ""}`} aria-hidden>
           <path
             d="M4.5 4.5 L11.5 11.5 M11.5 4.5 L4.5 11.5"
@@ -597,16 +640,16 @@ function Box({ mark, today, future, animate }: { mark?: Mark; today?: boolean; f
     );
   }
   if (future) {
-    return <span className={`${base} border-dashed border-zinc-200 bg-transparent`} />;
+    return <span className={`${base} border-dashed border-zinc-200 dark:border-zinc-800 bg-transparent`} />;
   }
   return (
     <span
-      className={`${base} bg-white shadow-xs group-hover/box:border-zinc-400 group-hover/box:shadow-sm ${
-        today ? "border-zinc-900/60 ring-2 ring-zinc-900/10" : "border-zinc-300"
+      className={`${base} bg-white dark:bg-zinc-900 shadow-xs group-hover/box:border-zinc-400 dark:group-hover/box:border-zinc-500 group-hover/box:shadow-sm ${
+        today ? "border-zinc-900/60 dark:border-zinc-100/60 ring-2 ring-zinc-900/10 dark:ring-zinc-100/10" : "border-zinc-300 dark:border-zinc-700"
       }`}
     >
       {/* faint preview of the check on hover */}
-      <svg key="empty" viewBox="0 0 16 16" className="size-3 text-zinc-300 opacity-0 lg:size-3.5 transition-opacity duration-150 group-hover/box:opacity-100" aria-hidden>
+      <svg key="empty" viewBox="0 0 16 16" className="size-3 text-zinc-300 dark:text-zinc-600 opacity-0 lg:size-3.5 transition-opacity duration-150 group-hover/box:opacity-100" aria-hidden>
         <path d="M3.5 8.5 L6.5 11.5 L12.5 4.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
     </span>
@@ -615,7 +658,7 @@ function Box({ mark, today, future, animate }: { mark?: Mark; today?: boolean; f
 
 function Kbd({ children }: { children: React.ReactNode }) {
   return (
-    <kbd className="rounded border border-zinc-200 bg-white px-1 font-sans text-[10px] text-zinc-500 shadow-[0_1px_0_rgb(0_0_0/0.06)]">
+    <kbd className="rounded border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-1 font-sans text-[10px] text-zinc-500 dark:text-zinc-400 shadow-[0_1px_0_rgb(0_0_0/0.06)]">
       {children}
     </kbd>
   );

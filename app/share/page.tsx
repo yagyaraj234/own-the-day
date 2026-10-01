@@ -47,15 +47,15 @@ export default async function SharePage({ searchParams }: Props) {
           width={CARD_W}
           height={CARD_H}
           alt={`Habit grid for ${MONTH_NAMES[shared.month]} ${shared.year}`}
-          className="mx-auto h-auto w-full max-w-[1200px] rounded-xl border border-zinc-200"
+          className="mx-auto h-auto w-full max-w-[1200px] rounded-xl border border-zinc-200 dark:border-zinc-800"
         />
       ) : (
-        <p className="py-24 text-center text-sm text-zinc-500">This share link is broken or incomplete.</p>
+        <p className="py-24 text-center text-sm text-zinc-500 dark:text-zinc-400">This share link is broken or incomplete.</p>
       )}
       <div className="mt-8 flex justify-center">
         <Link
           href="/"
-          className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition-[background-color,transform] duration-150 hover:bg-zinc-800 active:scale-[0.97] motion-reduce:active:scale-100"
+          className="rounded-lg bg-zinc-900 dark:bg-zinc-100 px-4 py-2 text-sm font-medium text-white dark:text-zinc-900 transition-[background-color,transform] duration-150 hover:bg-zinc-800 dark:hover:bg-zinc-200 active:scale-[0.97] motion-reduce:active:scale-100"
         >
           Start your own tracker
         </Link>
