@@ -13,9 +13,15 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const description = "A monthly habit tracker with a daily score graph, saved in your browser.";
+
 export const metadata: Metadata = {
+  metadataBase: new URL("https://owntheday.xyz"),
   title: "Own The Day",
-  description: "A monthly habit tracker with a daily score graph, saved in your browser.",
+  description,
+  // The image itself comes from app/opengraph-image.tsx.
+  openGraph: { title: "Own The Day", description, siteName: "Own The Day", type: "website" },
+  twitter: { card: "summary_large_image", title: "Own The Day", description },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
